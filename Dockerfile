@@ -10,7 +10,17 @@
 # IMPORTANT
 # If you change the base image, you will need to update the
 # PRE_FETCH_BASE_IMAGE variable in the .gitlab-ci.yml file also.
-FROM python:3.10-slim-bullseye AS base_stage
+FROM ubuntu:22.04 AS base_stage
+
+
+# The following ARGs set the versions of Python and R to be installed
+#
+#  - Changing the Python version will also change installed python
+#  - Changeing the R version will only change the checking process;
+#    to actually install a different version of R,
+#    you will need to pick the correct debian package names, see below.
+#
+ARG PYTHON_VERSION=3.10 R_VERSION=4.2.2
 
 # Set environment variables.
 # 1. Force Python stdout and stderr streams to be unbuffered.
@@ -30,7 +40,9 @@ ENV \
     USER_NAME="admin" \
     USER_DIRECTORY="/home/admin" \
     POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_VIRTUALENVS_IN_PROJECT=false
+    POETRY_VIRTUALENVS_IN_PROJECT=false \
+    BIOCONDUCTOR_VERSION="3.16" \
+    DNACOPY_VERSION="1.72"
 
 ENV \
     USER_BASHRC="${USER_DIRECTORY}/.bashrc" \
@@ -64,49 +76,74 @@ RUN \
 # - openssh-client, to be able to do git operations over ssh & also scp for backup-and-restore operations
 # - build-essential, meta-packages that are essential to compile software including gcc, g++, make, etc.
 # - pkg-config, to manage compile and link flags for libraries
-# - apt-transport-https/software-properties-common/gnupg2/dirmngr, to add
-# - repositories and install packages (specifically R)
+# - software-properties-common/gpg/dirmngr, to add system repositories and install R
 # BuildKit logic to cache apt packages
 # - https://vsupalov.com/buildkit-cache-mount-dockerfile/
 # - https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mounttypecache
 # - https://stackoverflow.com/a/72851168
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 RUN \
-    python3 -m pip install --upgrade pip==${PIP_VERSION} && \
+    apt-get update --quiet && \
+    apt-get install --yes --quiet software-properties-common && \
+    add-apt-repository --yes ppa:deadsnakes/ppa && \
     apt-get update --quiet && \
     apt-get install --yes --quiet --no-install-recommends \
     build-essential \
     pkg-config \
+    "python${PYTHON_VERSION:?}" \
+    "python${PYTHON_VERSION:?}-venv" \
+    vim \
     nano \
     curl \
     wget \
     git \
     tree \
+    ncdu \
     openssh-client \
-    apt-transport-https \
+    pipx \
     software-properties-common \
-    gnupg2 \
     dirmngr \
+    gpg \
     && rm -rf /var/lib/apt/lists/* \
-    && python3 -m pip install pipx \
     && pipx ensurepath \
     && pipx install poetry==$POETRY_VERSION \
-    && pipx inject -f poetry poetry-plugin-export
+    && python3 --version | grep ${PYTHON_VERSION} \
+    && pipx inject -f poetry poetry-plugin-export \
+    && apt-get -s clean
 
-# Install R (typically the latest version) and the DNAcopy package (via Bioconductor 3.20)
-# Steps from https://cloud.r-project.org/bin/linux/debian/#installation
-# CNVKit needs both R and the DNAcopy package
+# Install R 4.2.2 from https://cloud.r-project.org/bin/linux/ubuntu/
+# The subversions of R-4.* can be found at https://cloud.r-project.org/bin/linux/ubuntu/jammy-cran40/
+#
+# The system packages from this r-project repository ensure that a specific
+# version of R is installed however do not install r-base or r-recommended
+# packages, as they will force the installation to the latest R version despite
+# specifying different versions of r-base-core and r-base-dev. Yes its mad.
+#
 RUN \
-    echo "deb http://cloud.r-project.org/bin/linux/debian bullseye-cran40/" >> /etc/apt/sources.list \
-    && gpg --keyserver keyserver.ubuntu.com --recv-key '95C0FAF38DB3CCAD0C080A7BDC78B2DDEABC47B7' \
-    && gpg --armor --export '95C0FAF38DB3CCAD0C080A7BDC78B2DDEABC47B7' | tee /etc/apt/trusted.gpg.d/cran_debian_key.asc \
-    && apt update \
-    && apt install -y r-base r-base-dev \
-    && R --version | grep "R version 4.4" \
-    && Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager')" \
-    && Rscript -e "BiocManager::install('DNAcopy, version = '3.20')" \
-    && Rscript -e "packageVersion('DNAcopy')" | grep "1.72" \
-    && rm -rf /var/lib/apt/lists/*
+    wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/cran_ubuntu_key.gpg && \
+    add-apt-repository 'deb https://cloud.r-project.org/bin/linux/ubuntu jammy-cran40/' && \
+    apt-get update -qq && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    r-base-core=4.2.2-1.2204.0 \
+    r-base-dev=4.2.2-1.2204.0 \
+    r-base-html=4.2.2-1.2204.0 \
+    r-doc-html=4.2.2-1.2204.0 \
+    r-doc-info=4.2.2-1.2204.0 \
+    r-doc-pdf=4.2.2-1.2204.0 \
+    r-mathlib=4.2.2-1.2204.0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && R --version | grep ${R_VERSION:?}
+
+# Install R packages
+#
+# To use an older Bioconductor version, we need to specify the version of the
+# Bioconductor and the version of the R packages we want to install. Ask is set
+# to FALSE to avoid user input.
+RUN \
+    Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')" && \
+    Rscript -e "BiocManager::install(version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
+    Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
+    Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1)
 
 
 # As the non-root user we install pipx and poetry so that they are available in
