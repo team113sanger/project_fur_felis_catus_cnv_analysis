@@ -4,10 +4,10 @@ stages:
   - publish
 
 include:
-# DOCS: https://gitlab.internal.sanger.ac.uk/team113sanger/common/cicd-template/-/blob/develop/README.md
-  - project: 'team113sanger/common/cicd-template'
+  # DOCS: https://gitlab.internal.sanger.ac.uk/team113sanger/common/cicd-template/-/blob/develop/README.md
+  - project: "team113sanger/common/cicd-template"
     ref: 0.3.1
-    file: '.gitlab-ci-components.yml'
+    file: ".gitlab-ci-components.yml"
 
 #############
 # TEMPLATES #
@@ -26,7 +26,7 @@ include:
     DOCKER_TARGET_STAGE: base_stage
     # We need to set this to 1 to enable BuildKit as the Dockerfile uses BuildKit features to speed up the build
     DOCKER_BUILDKIT: 1
-    PRE_FETCH_BASE_IMAGE: python:3.9-slim-bullseye
+    PRE_FETCH_BASE_IMAGE: python:3.10-slim-bullseye
     # Incase 'docker compose' build is ever used we want to ensure the image
     # does not have sudo. By default CICD jobs do not build with 'docker
     # compose' but use 'docker' - so this is just a safety measure.
@@ -44,7 +44,6 @@ build:
     - .component-script_docker-build
     - .component-rules-except-release
 
-
 unit-test:
   stage: test
   extends:
@@ -52,7 +51,6 @@ unit-test:
     - .specific-variables
     - .component-script-test-unit-python
     - .component-rules-except-release
-
 
 format-test:
   stage: test
@@ -62,8 +60,6 @@ format-test:
     - .component-script-test-formatting-in-docker
     - .component-rules-except-release
 
-
-
 publish-develop:
   stage: publish
   extends:
@@ -72,7 +68,6 @@ publish-develop:
     - .component-script-publish-develop-docker-image
     - .component-rules-develop-only
 
-
 publish-tagged_and_latest_docker_images:
   stage: publish
   extends:
@@ -80,7 +75,6 @@ publish-tagged_and_latest_docker_images:
     - .specific-variables
     - .component-script-publish-tagged+latest-docker-image
     - .component-rules-tag-only
-
 
 publish-tagged_python_package:
   stage: publish

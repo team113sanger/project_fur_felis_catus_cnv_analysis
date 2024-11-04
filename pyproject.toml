@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{ include = "fur_cnvkit", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 
 # Needed to support python 3.7 and older, with regards to a single source of
 # truth for this packages versioning

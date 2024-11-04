@@ -115,8 +115,8 @@ devcontainer setup*.
 ### Local/Remote Machine Setup
 
 #### Prerequisites:
- -  Python 3.9 (or later) installed
-    - (if on the farm, do `module load python/3.9.2` or similar)
+ -  Python 3.10 (or later) installed
+    - (if on the farm, do `module load python/3.10.2` or similar)
  - Poetry installed
     - if on the farm, do `module load /software/team113/modules/modulefiles/poetry/1.8.2`
     - if on the farm and can't access the module, create a virtual env and install `poetry` (will be covered below)
