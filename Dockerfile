@@ -10,7 +10,7 @@
 # IMPORTANT
 # If you change the base image, you will need to update the
 # PRE_FETCH_BASE_IMAGE variable in the .gitlab-ci.yml file also.
-FROM python:3.11-slim-bullseye as base_stage
+FROM python:3.9-slim-bullseye as base_stage
 
 # Set environment variables.
 # 1. Force Python stdout and stderr streams to be unbuffered.

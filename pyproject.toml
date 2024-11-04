@@ -7,11 +7,20 @@ readme = "README.md"
 packages = [{ include = "fur_cnvkit", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.9"
 
 # Needed to support python 3.7 and older, with regards to a single source of
 # truth for this packages versioning
 importlib-metadata = { version = "~=1.0", python = "<3.8" }
+
+# CNVKit is the main dependency of this package
+# (it requires llvm and llvmlite, which when installed come with precompiled binaries -- similar to an anaconda install)
+cnvkit = "0.9.10"
+
+# The CNVKit package (and numba/llvm/llvmlut is only tested with numpy older than 2.0)
+# For more info see: https://numba.readthedocs.io/en/stable/user/installing.html#version-support-information
+numpy = "<2"
+pandas = "<2"
 
 [tool.poetry.plugins."console_scripts"]
 # Scripts are defined here, and are added by Python to the PATH when the package
