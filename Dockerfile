@@ -93,16 +93,20 @@ RUN \
     && pipx install poetry==$POETRY_VERSION \
     && pipx inject -f poetry poetry-plugin-export
 
-# Install R (typically the latest version) and check the version
+# Install R (typically the latest version) and the DNAcopy package (via Bioconductor 3.20)
 # Steps from https://cloud.r-project.org/bin/linux/debian/#installation
-# CNVKit needs R
+# CNVKit needs both R and the DNAcopy package
 RUN \
     echo "deb http://cloud.r-project.org/bin/linux/debian bullseye-cran40/" >> /etc/apt/sources.list \
     && gpg --keyserver keyserver.ubuntu.com --recv-key '95C0FAF38DB3CCAD0C080A7BDC78B2DDEABC47B7' \
     && gpg --armor --export '95C0FAF38DB3CCAD0C080A7BDC78B2DDEABC47B7' | tee /etc/apt/trusted.gpg.d/cran_debian_key.asc \
     && apt update \
     && apt install -y r-base r-base-dev \
-    && R --version | grep "R version 4.4"
+    && R --version | grep "R version 4.4" \
+    && Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager')" \
+    && Rscript -e "BiocManager::install('DNAcopy, version = '3.20')" \
+    && Rscript -e "packageVersion('DNAcopy')" | grep "1.72" \
+    && rm -rf /var/lib/apt/lists/*
 
 
 # As the non-root user we install pipx and poetry so that they are available in
@@ -126,7 +130,6 @@ RUN \
 ENV \
     PATH="${VENV_DIRECTORY}/bin:${PATH}" \
     VIRTUAL_ENV=${VENV_DIRECTORY}
-
 
 # Copy dependency control files and install dependencies
 # 1. only the dependency control files for Poetry (equivalent to "requirements.txt"
