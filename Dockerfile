@@ -10,7 +10,7 @@
 # IMPORTANT
 # If you change the base image, you will need to update the
 # PRE_FETCH_BASE_IMAGE variable in the .gitlab-ci.yml file also.
-FROM python:3.10-slim-bullseye as base_stage
+FROM python:3.10-slim-bullseye AS base_stage
 
 # Set environment variables.
 # 1. Force Python stdout and stderr streams to be unbuffered.
@@ -64,6 +64,8 @@ RUN \
 # - openssh-client, to be able to do git operations over ssh & also scp for backup-and-restore operations
 # - build-essential, meta-packages that are essential to compile software including gcc, g++, make, etc.
 # - pkg-config, to manage compile and link flags for libraries
+# - apt-transport-https/software-properties-common/gnupg2/dirmngr, to add
+# - repositories and install packages (specifically R)
 # BuildKit logic to cache apt packages
 # - https://vsupalov.com/buildkit-cache-mount-dockerfile/
 # - https://github.com/moby/buildkit/blob/master/frontend/dockerfile/docs/reference.md#run---mounttypecache
@@ -81,11 +83,26 @@ RUN \
     git \
     tree \
     openssh-client \
+    apt-transport-https \
+    software-properties-common \
+    gnupg2 \
+    dirmngr \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m pip install pipx \
     && pipx ensurepath \
     && pipx install poetry==$POETRY_VERSION \
     && pipx inject -f poetry poetry-plugin-export
+
+# Install R (typically the latest version) and check the version
+# Steps from https://cloud.r-project.org/bin/linux/debian/#installation
+# CNVKit needs R
+RUN \
+    echo "deb http://cloud.r-project.org/bin/linux/debian bullseye-cran40/" >> /etc/apt/sources.list \
+    && gpg --keyserver keyserver.ubuntu.com --recv-key '95C0FAF38DB3CCAD0C080A7BDC78B2DDEABC47B7' \
+    && gpg --armor --export '95C0FAF38DB3CCAD0C080A7BDC78B2DDEABC47B7' | tee /etc/apt/trusted.gpg.d/cran_debian_key.asc \
+    && apt update \
+    && apt install -y r-base r-base-dev \
+    && R --version | grep "R version 4.4"
 
 
 # As the non-root user we install pipx and poetry so that they are available in
@@ -142,7 +159,7 @@ USER "${USER_NAME}"
 ###################################
 
 # To develop from the container we need add some extra directories to work nicely with VSCode
-FROM base_stage as development_only_stage
+FROM base_stage AS development_only_stage
 USER root
 
 # Install hubflow to allow for git flow style development & conditional install
