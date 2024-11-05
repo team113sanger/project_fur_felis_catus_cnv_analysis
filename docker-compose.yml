@@ -21,6 +21,9 @@ services:
       - type: bind
         source: ./
         target: /opt/repo/
+      - type: bind
+        source: /lustre/scratch124/bf14/
+        target: /lustre/scratch124/bf14/
     networks:
       - local-default
 
