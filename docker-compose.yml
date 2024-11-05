@@ -24,6 +24,9 @@ services:
       - type: bind
         source: /lustre/scratch124/bf14/
         target: /lustre/scratch124/bf14/
+    environment:
+      TEST_BAM_DIR: "/lustre/scratch124/bf14/sample_bams/"
+      TEST_BAITSET_DIR: "/lustre/scratch124/bf14/references/baitset/"
     networks:
       - local-default
 
