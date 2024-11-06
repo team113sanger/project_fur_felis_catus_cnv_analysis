@@ -2,12 +2,15 @@ import shutil
 import pathlib
 import os
 import subprocess
+import re
 
 import pytest
 
 # CONSTANTS
 ENV_VAR_BAM_DIR = "TEST_BAM_DIR"
 ENV_VAR_BAITSET_DIR = "TEST_BAITSET_DIR"
+ENV_VAR_GENOME_DIR = "TEST_GENOME_DIR"
+ENV_VAR_ANNOTATION_DIR = "TEST_ANNOTATION_DIR"
 
 # HELPERS
 
@@ -51,6 +54,37 @@ def feline_baitset() -> pathlib.Path:
     return baitset
 
 
+@pytest.fixture
+def feline_reference_fasta() -> pathlib.Path:
+    raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
+    if not raw_genome_dir:
+        raise ValueError(
+            f"Environment variable {ENV_VAR_GENOME_DIR} is not set or empty."
+        )
+    expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
+    reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
+    if not reference_fasta.exists():
+        raise FileNotFoundError(
+            f"Could not find reference FASTA at {str(reference_fasta)}"
+        )
+    return reference_fasta
+
+
+@pytest.fixture
+def feline_refflat_file() -> pathlib.Path:
+    raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
+    if not raw_annotation_dir:
+        raise ValueError(
+            f"Environment variable {ENV_VAR_ANNOTATION_DIR} is not set or empty."
+        )
+    refflat_dir = pathlib.Path(raw_annotation_dir).resolve() / "refFlat_files"
+    expected_refflat_file = "Felis_catus.Felis_catus_9.0.104.refFlat.txt"
+    refflat_file = refflat_dir / expected_refflat_file
+    if not refflat_file.exists():
+        raise FileNotFoundError(f"Could not find refFlat file at {str(refflat_file)}")
+    return refflat_file
+
+
 # TESTS
 
 
@@ -72,13 +106,45 @@ def test_cnvkit_version_is_expected():
 
 
 @pytest.mark.skipif(should_skip_tests(), reason="No test data found")
-def test_cnvkit_runs__numpy_regression():
+def test_cnvkit_runs__numpy_regression(
+    feline_reference_fasta: pathlib.Path,
+    feline_baitset: pathlib.Path,
+    feline_refflat_file: pathlib.Path,
+    bams: list[pathlib.Path],
+    tmp_path: pathlib.Path,
+):
     # Given
-    pass  ## WIP TEST
+    method = "hybrid"
+    expected_output_target_bed = tmp_path / feline_baitset.name.replace(
+        ".bed", ".target.bed"
+    )
+    expected_output_antitarget_bed = tmp_path / feline_baitset.name.replace(
+        ".bed", ".antitarget.bed"
+    )
+    expected_stderr_substrings = [
+        "Detected file format: bed",
+        "Detected file format: refflat",
+        f"Wrote {expected_output_target_bed}",
+        f"Wrote {expected_output_antitarget_bed}",
+    ]
+    numpy_error_pattern = r"np\.asfarray.*was removed in the NumPy 2\.0 release"
+
+    cmd = f"cnvkit.py autobin -f {feline_reference_fasta} -m {method} -t {feline_baitset} --annotate {feline_refflat_file} --target-output-bed {expected_output_target_bed} --antitarget-output-bed {expected_output_antitarget_bed} {' '.join([str(bam) for bam in bams])}"
 
     # When
+    subprocess_result = subprocess.run(
+        cmd, shell=True, capture_output=True, check=False, universal_newlines=True
+    )
 
     # Then
+    assert subprocess_result.returncode == 0
+    assert pathlib.Path(expected_output_target_bed).exists()
+    assert pathlib.Path(expected_output_antitarget_bed).exists()
+    for line in expected_stderr_substrings:
+        assert line in subprocess_result.stderr
+    assert not re.search(
+        numpy_error_pattern, subprocess_result.stderr
+    ), f"Detected numpy asfarray error: {subprocess_result.stderr}"
 
 
 @pytest.mark.skipif(should_skip_tests(), reason="No test data found")

@@ -27,6 +27,8 @@ services:
     environment:
       TEST_BAM_DIR: "/lustre/scratch124/bf14/sample_bams/"
       TEST_BAITSET_DIR: "/lustre/scratch124/bf14/references/baitset/"
+      TEST_GENOME_DIR: "/lustre/scratch124/bf14/references/genome/"
+      TEST_ANNOTATION_DIR: "/lustre/scratch124/bf14/references/annotation/"
     networks:
       - local-default
 
