@@ -42,7 +42,8 @@ ENV \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_VIRTUALENVS_IN_PROJECT=false \
     BIOCONDUCTOR_VERSION="3.16" \
-    DNACOPY_VERSION="1.72"
+    DNACOPY_VERSION="1.72" \
+    COMPLEXHEATMAP_VERSION="2.14"
 
 ENV \
     USER_BASHRC="${USER_DIRECTORY}/.bashrc" \
@@ -142,6 +143,8 @@ RUN \
 RUN \
     Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')" && \
     Rscript -e "BiocManager::install(version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
+    Rscript -e "BiocManager::install('ComplexHeatmap', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
+    Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo "Got $(Rscript -e "packageVersion('ComplexHeatmap')") instead of ${COMPLEXHEATMAP_VERSION}}" && exit 1) && \
     Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
     Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1)
 
