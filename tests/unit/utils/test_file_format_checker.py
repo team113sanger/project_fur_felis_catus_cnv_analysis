@@ -8,22 +8,25 @@ from utils.file_format_checker import is_fasta, is_bam, is_bed, validate_bam_fil
 def test_is_fasta_valid(mock_file_path):
     mock_file_path = mock_file_path.with_suffix(".fasta")
     content = ">header\nATCG\n"
-    with patch("builtins.open", mock_open(read_data=content)):
-        assert is_fasta(mock_file_path) is True
+    mock_file_path.write_text(content)
+
+    assert is_fasta(mock_file_path) is True
 
 
 def test_is_fasta_no_valid_suffix(mock_file_path):
     mock_file_path = mock_file_path.with_suffix(".txt")
     content = ">header\nATCG\n"
-    with patch("builtins.open", mock_open(read_data=content)):
-        assert is_fasta(mock_file_path) is False
+    mock_file_path.write_text(content)
+
+    assert is_fasta(mock_file_path) is False
 
 
 def test_is_fasta_no_header(mock_file_path):
     mock_file_path = mock_file_path.with_suffix(".fasta")
     content = "ATCG\n"
-    with patch("builtins.open", mock_open(read_data=content)):
-        assert is_fasta(mock_file_path) is False
+    mock_file_path.write_text(content)
+
+    assert is_fasta(mock_file_path) is False
 
 
 def test_is_fasta_error_reading_file(mock_file_path):
