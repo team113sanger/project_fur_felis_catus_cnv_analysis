@@ -29,6 +29,7 @@ services:
       TEST_BAITSET_DIR: "/lustre/scratch124/bf14/references/baitset/"
       TEST_GENOME_DIR: "/lustre/scratch124/bf14/references/genome/"
       TEST_ANNOTATION_DIR: "/lustre/scratch124/bf14/references/annotation/"
+      TEST_CNVKIT_METADATA_DIR: "/lustre/scratch124/bf14/metadata/cnvkit/"
     networks:
       - local-default
 
