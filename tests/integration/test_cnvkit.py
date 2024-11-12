@@ -7,14 +7,15 @@ import re
 import pytest
 
 # CONSTANTS
+
+
 ENV_VAR_BAM_DIR = "TEST_BAM_DIR"
 ENV_VAR_BAITSET_DIR = "TEST_BAITSET_DIR"
 ENV_VAR_GENOME_DIR = "TEST_GENOME_DIR"
 ENV_VAR_ANNOTATION_DIR = "TEST_ANNOTATION_DIR"
 
+
 # HELPERS
-
-
 def can_find_bams() -> bool:
     raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
     bam_dir = pathlib.Path(raw_bam_dir)
@@ -31,58 +32,6 @@ def can_find_baitset() -> bool:
 
 def should_skip_tests() -> bool:
     return not all([can_find_bams(), can_find_baitset()])
-
-
-# FIXTURES
-
-
-@pytest.fixture
-def bams() -> list[pathlib.Path]:
-    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
-    bam_dir = pathlib.Path(raw_bam_dir)
-
-    return list(bam_dir.glob("**/*.bam"))
-
-
-@pytest.fixture
-def feline_baitset() -> pathlib.Path:
-    raw_baitset_dir = os.environ.get(ENV_VAR_BAITSET_DIR, "")
-    expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
-    baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
-    if not baitset.exists():
-        raise FileNotFoundError(f"Could not find baitset at {baitset}")
-    return baitset
-
-
-@pytest.fixture
-def feline_reference_fasta() -> pathlib.Path:
-    raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
-    if not raw_genome_dir:
-        raise ValueError(
-            f"Environment variable {ENV_VAR_GENOME_DIR} is not set or empty."
-        )
-    expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
-    reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
-    if not reference_fasta.exists():
-        raise FileNotFoundError(
-            f"Could not find reference FASTA at {str(reference_fasta)}"
-        )
-    return reference_fasta
-
-
-@pytest.fixture
-def feline_refflat_file() -> pathlib.Path:
-    raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
-    if not raw_annotation_dir:
-        raise ValueError(
-            f"Environment variable {ENV_VAR_ANNOTATION_DIR} is not set or empty."
-        )
-    refflat_dir = pathlib.Path(raw_annotation_dir).resolve() / "refFlat_files"
-    expected_refflat_file = "Felis_catus.Felis_catus_9.0.104.refFlat.txt"
-    refflat_file = refflat_dir / expected_refflat_file
-    if not refflat_file.exists():
-        raise FileNotFoundError(f"Could not find refFlat file at {str(refflat_file)}")
-    return refflat_file
 
 
 # TESTS
