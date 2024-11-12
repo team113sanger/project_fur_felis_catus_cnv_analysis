@@ -53,23 +53,37 @@ def is_bam(file_path: Path) -> bool:
 
 
 def _is_bed(file_path: Path) -> bool:
-    """Parse a file and check it has a valid BED format
+    """Check if a file has a valid BED format.
 
     Args:
-        bed_file (Path):
+        file_path (Path): Path to the file to validate.
 
     Returns:
-        bool: _description_
+        bool: True if the file appears to follow the BED format, False otherwise.
     """
-    with open(file_path, "r") as file:
-        for line in file:
-            should_skip = line.startswith("#") or not line.strip()
-            if should_skip:
-                continue
-            fields = line.strip().split("\t")
-            if len(fields) < 3:
+    try:
+        with open(file_path, "r") as file:
+            lines = [
+                line.strip()
+                for line in file
+                if line.strip() and not line.strip().startswith("#")
+            ]  # Extract all non-empty and non-comment lines
+
+        for line in lines:
+            fields = line.split("\t")
+            expected_minimum_fields = 3
+            is_start_column_digit = fields[1].isdigit()
+            is_end_column_digit = fields[2].isdigit()
+            if (
+                len(fields) < expected_minimum_fields
+                or not is_start_column_digit
+                or not is_end_column_digit
+            ):
                 return False
-    return True
+        return True
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return False
 
 
 def is_bed(file_path: Path) -> bool:
@@ -88,7 +102,7 @@ def is_bed(file_path: Path) -> bool:
         return False
 
     try:
-        _is_bed(file_path)
+        return _is_bed(file_path)
     except Exception as e:
         logger.error(f"Error reading BED file {file_path}: {e}")
         return False
