@@ -1,0 +1,173 @@
+import argparse
+import json
+import logging
+from pathlib import Path
+
+from utils.cnvkit_utils import run_cnvkit_access, run_cnvkit_autobin
+from utils.file_format_checker import is_fasta, is_bed, validate_bam_files
+
+
+def configure_logging():
+    """
+    Define logging configuration
+    """
+    logging.basicConfig(
+        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Generate various CNVKit files needed to run downstream analyses."
+    )
+    parser.add_argument(
+        "-b",
+        metavar="BAMS",
+        type=Path,
+        nargs="+",
+        required=True,
+        help="Path to tumour and normal BAM files. Used to run cnvkit.py autobin. Will not appear in output config file.",
+    )
+    parser.add_argument(
+        "-f",
+        metavar="FASTA",
+        type=Path,
+        required=True,
+        help="Path to reference genome FASTA file.",
+    )
+    parser.add_argument(
+        "-t",
+        metavar="BAITSET",
+        type=Path,
+        required=True,
+        help="Path to baitset BED file.",
+    )
+    parser.add_argument(
+        "-r",
+        metavar="REFFLAT",
+        type=Path,
+        required=True,
+        help="Path to refFlat annotation file.",
+    )
+    parser.add_argument(
+        "-m",
+        metavar="METADATA",
+        type=Path,
+        required=True,
+        help="Path to sample metadata Excel spreadsheet.",
+    )
+    parser.add_argument(
+        "-c",
+        metavar="CONFIG_PREFIX",
+        type=str,
+        required=False,
+        default="config.json",
+        help="Prefix of output configuration file to store CNVKit static files ({prefix}.config.json). Can be used in downstream scripts to avoid re-specifying paths. Will be written to outdir (-o). Default: config.json",
+    )
+    parser.add_argument(
+        "-o",
+        metavar="OUTDIR",
+        type=Path,
+        required=True,
+        help="Path to directory where output files will be stored.",
+    )
+
+    return parser.parse_args()
+
+
+def generate_config_file(
+    reference_fasta: Path,
+    baitset_bed: Path,
+    refflat_file: Path,
+    sample_metadata_xlsx: Path,
+    targets_bed: Path,
+    antitargets_bed: Path,
+    config_file_name: str,
+    outdir: Path,
+) -> Path:
+    logging.info("Generating config file containing CNVKit static files...")
+
+    # Initialise a dictionary containing the config file data
+    config_data = {
+        "reference_fasta": str(reference_fasta),
+        "baitset_bed": str(baitset_bed),
+        "refflat_file": str(refflat_file),
+        "sample_metadata_xlsx": str(sample_metadata_xlsx),
+        "targets_bed": str(targets_bed),
+        "antitargets_bed": str(antitargets_bed),
+    }
+
+    # Construct output config file path
+    output_config = outdir / f"{config_file_name}.config.json"
+
+    # Write data to output config file path
+    logging.info(f"Writing config file to {str(output_config)}")
+    try:
+        with output_config.open("w") as json_file:
+            json.dump(config_data, json_file, indent=4)
+            json_file.write("\n")
+        logging.info("Successfully wrote config file.")
+    except Exception as e:
+        logging.warning(f"Error writing config file: {e}")
+        raise
+
+    return output_config
+
+
+def main():
+    # Get command line arguments
+    logging.info("Starting generation of CNVKit static files ...")
+    logging.info("Getting and validating command line arguments...")
+    args = parse_arguments()
+
+    validated_bams = validate_bam_files(args.b)
+    if is_fasta(args.f):
+        reference_fasta = args.f
+    else:
+        raise ValueError(f"{str(args.f)} is not a valid FASTA file.")
+    if is_bed(args.t):
+        baitset_bed = args.t
+    else:
+        raise ValueError(f"{str(args.t)} is not a valid FASTA file.")
+    refflat_file = args.r
+    sample_metadata_xlsx = args.m
+    config_file_name = args.c
+    outdir = args.o
+
+    logging.debug(f"BAM files: {validated_bams}")
+    logging.debug(f"Reference FASTA: {reference_fasta}")
+    logging.debug(f"Baitset BED: {baitset_bed}")
+    logging.debug(f"RefFlat file: {refflat_file}")
+    logging.debug(f"Sample metadata Excel spreadsheet: {sample_metadata_xlsx}")
+    logging.debug(f"Outdir: {outdir}")
+
+    logging.info(
+        "Command line arguments will now be used to generate CNVKit statis files ..."
+    )
+
+    # Run cnvkit.py access
+    access_bed = run_cnvkit_access(reference_fasta, outdir)
+
+    # Run cnvkit.py autobin
+    target_bed_dict = run_cnvkit_autobin(
+        validated_bams, baitset_bed, access_bed, refflat_file, outdir
+    )
+
+    # Generate configuration file including newly generated reference files
+    generate_config_file(
+        reference_fasta,
+        baitset_bed,
+        refflat_file,
+        sample_metadata_xlsx,
+        target_bed_dict["target"],
+        target_bed_dict["antitarget"],
+        config_file_name,
+        outdir,
+    )
+
+    logging.info("CNVKit static file generation successfully completed.")
+
+
+if __name__ == "__main__":
+    configure_logging()
+    main()
