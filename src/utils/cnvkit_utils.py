@@ -38,6 +38,7 @@ def run_cnvkit_access(reference_fasta: Path, outdir: Path) -> Path:
     Returns:
         Path: Path to the output BED file containing sequence-accessible coordinates
     """
+    logging.info("Preparing to run cnvkit.py access...")
     if is_fasta(reference_fasta):
         fasta_stem = reference_fasta.stem
         output_bed_name = f"access-{fasta_stem}.bed"
@@ -72,6 +73,7 @@ def run_cnvkit_autobin(
     Returns:
         dict[Path]: A dictionary containing the target and antitarget BED files. Respective keys are 'target' and 'antitarget'
     """
+    logging.info("Preparing to run cnvkit.py autobin...")
     # Validate input baitset BED and construct output BED paths
     if is_bed(baitset_bed):
         output_target_bed_name = baitset_bed.name.replace(".bed", ".target.bed")
