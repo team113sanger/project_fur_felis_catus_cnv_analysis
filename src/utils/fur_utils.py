@@ -32,10 +32,8 @@ def get_sample_ids_for_file_list(file_list: t.List[Path]) -> set:
 # -----------------------------------------------
 # Functions for processing the config file
 # -----------------------------------------------
-
-
-def extract_metadata_files_from_config_json(config_json: Path) -> t.Tuple[Path]:
-    """Extract all metadata file paths from the config JSON and return as a tuple"""
+def extract_metadata_files_from_config_json(config_json: Path) -> t.Dict[str, str]:
+    """Extract all metadata file paths from the config JSON and return as a dictionary"""
 
     logging.info(f"Extracting metadata file paths from {str(config_json)} ...")
     with open(config_json, "r") as json_file:
@@ -100,8 +98,7 @@ def remove_unwanted_sample_files(
     files: t.List[Path], exclude_file: Path
 ) -> t.List[Path]:
     """Remove files that belong to samples in the exclude file from the final BAM list"""
-
-    # Read in sample IDs from the exlude file
+    # Read in sample IDs from the exclude file
     logging.info(f"Extracting samples to exclude from {str(exclude_file)} ...")
     exclude_samples = extract_sample_ids_from_exclude_file(exclude_file)
 
@@ -126,7 +123,10 @@ def remove_unwanted_sample_files(
 
 def determine_sample_sexes(
     file_list: t.List[Path], sample_metadata_xlsx: Path
-) -> t.Dict[Path, str]:
+) -> t.Dict[str, str]:
+    """
+    Determine the sex of each sample in the file list based on the metadata Excel file.
+    """
     # Get the corresponding sample IDs for each file in the file list
     sample_ids = get_sample_ids_for_file_list(file_list)
 
@@ -140,12 +140,32 @@ def determine_sample_sexes(
     for sheet_name in sample_metadata_spreadsheet.sheet_names:
         sheet_data = pd.read_excel(sample_metadata_spreadsheet, sheet_name=sheet_name)
 
-        # Filter for rows that include samples from the set of sample ID
+        # Filter for rows that include samples from the set of sample IDs
         filtered_data = sheet_data[sheet_data["Sanger DNA ID"].isin(sample_ids)]
 
-        # Add the sample name and it's sex to the dictionary
+        # Add the sample name and its sex to the dictionary
         for _, row in filtered_data.iterrows():
-            sample_sex_dict[row["Sanger DNA ID"]] = row["Sex"]
+            sex = row["Sex"]
+            if sex not in {"M", "F", "U"}:
+                logger.error(
+                    f"Unexpected sex value '{sex}' for sample '{row['Sanger DNA ID']}' in sheet '{sheet_name}'."
+                )
+                raise ValueError(
+                    f"Unexpected sex value '{sex}' for sample '{row['Sanger DNA ID']}'. "
+                    f"Expected one of 'M', 'F', or 'U'."
+                )
+            sample_sex_dict[row["Sanger DNA ID"]] = sex
+
+    # Identify missing samples
+    missing_samples = sample_ids - sample_sex_dict.keys()
+    if missing_samples:
+        missing_samples_str = ", ".join(sorted(missing_samples))
+        logger.error(
+            f"The following samples are missing from the metadata Excel '{sample_metadata_xlsx}': {missing_samples_str}."
+        )
+        raise ValueError(
+            f"The following samples are missing from the metadata Excel '{sample_metadata_xlsx}': {missing_samples_str}."
+        )
 
     return sample_sex_dict
 
@@ -156,7 +176,7 @@ def split_file_list_by_sample_sex(
     # Determine the sexes of all samples in the file list
     sample_sex_dict = determine_sample_sexes(file_list, sample_metadata_xlsx)
 
-    # Initialise a dictionary to store sex-seperated files
+    # Initialise a dictionary to store sex-separated files
     file_sex_dict = defaultdict(list)
 
     for file in file_list:
