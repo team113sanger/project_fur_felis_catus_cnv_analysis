@@ -124,7 +124,7 @@ def validate_bam_files(files: list[Path]) -> list[Path]:
     if len(files) == 0:
         raise ValueError("Recieved no files to validate. Check input data.")
     else:
-        logger.debug(f"Recieved {len(files)} to validate: {files}")
+        logger.debug(f"Recieved {len(files)} potential BAMs to validate: {files}")
 
     valid_bams = []
 
