@@ -185,3 +185,59 @@ def split_file_list_by_sample_sex(
         file_sex_dict[sex].append(file)
 
     return file_sex_dict
+
+
+# -----------------------------------------------
+# Functions for determining tumour/normal status of a given sample
+# -----------------------------------------------
+def get_tumour_normal_status(sample_metadata_xlsx: Path, sample_id: str):
+    """
+    This function takes an Excel file path and a sample ID, searches all sheets
+    for the sample ID, and returns the tumour/normal status (T/N) of the sample.
+    Raises a ValueError if the sample ID is not found, if required columns are missing,
+    or if the T/N status is invalid.
+
+    Parameters:
+        sample_metadata_xlsx (Path): Path to the Excel file.
+        sample_id (str): The sample ID to search for.
+
+    Returns:
+        str: Tumour/normal status ('T' or 'N') if found.
+
+    Raises:
+        ValueError: If the sample ID is not found in any sheet.
+        ValueError: If required columns ('Sanger DNA ID', 'T/N') are missing in any sheet.
+        ValueError: If the T/N status for the sample ID is invalid, i.e., does not start
+                    with 'T' or 'N'.
+    """
+    # Load the Excel file
+    excel_data = pd.ExcelFile(sample_metadata_xlsx)
+
+    # Iterate through each sheet in the file
+    for sheet_name in excel_data.sheet_names:
+        # Load the sheet into a DataFrame
+        df = excel_data.parse(sheet_name)
+
+        # Check if the required columns exist
+        if not {"Sanger DNA ID", "T/N"}.issubset(df.columns):
+            raise ValueError(
+                f"Required columns ('Sanger DNA ID', 'T/N') are missing in sheet '{sheet_name}'."
+            )
+
+        # Search for the sample ID
+        matched_row = df[df["Sanger DNA ID"] == sample_id]
+
+        # If a match is found, return the T/N status
+        if not matched_row.empty:
+            tn_status = matched_row["T/N"].iloc[0]
+            if isinstance(tn_status, str) and tn_status.startswith(("T", "N")):
+                return tn_status[
+                    0
+                ]  # Only return the first character (T or N) e.g. for samples with T1, N2 etc.
+            else:
+                raise ValueError(
+                    f"Invalid T/N status '{tn_status}' for sample ID '{sample_id}'."
+                )
+
+    # Raise an error if the sample ID is not found
+    raise ValueError(f"Sample ID '{sample_id}' not found in any sheet.")

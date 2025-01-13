@@ -3,8 +3,9 @@ from pathlib import Path
 import json
 import pandas as pd
 from collections import defaultdict
+import re
 
-# Import the functions from your script
+from tests.mocks.mock_files import get_example_sample_metadata_xlsx
 from utils.fur_utils import (
     get_sample_id_from_file_path,
     get_sample_ids_for_file_list,
@@ -14,7 +15,20 @@ from utils.fur_utils import (
     remove_unwanted_sample_files,
     determine_sample_sexes,
     split_file_list_by_sample_sex,
+    get_tumour_normal_status,
 )
+
+
+# Fixtures
+
+
+@pytest.fixture
+def example_sample_metadata_xlsx():
+    sample_metadata_xlsx = get_example_sample_metadata_xlsx()
+    return sample_metadata_xlsx
+
+
+# Tests
 
 
 def test_get_sample_id_from_file_path():
@@ -271,3 +285,102 @@ def test_split_file_list_by_sample_sex_with_missing_sex(tmp_path, caplog):
     expected_error_message = f"The following samples are missing from the metadata Excel '{excel_file}': sample3."
     assert expected_error_message in str(excinfo.value)
     assert expected_error_message in caplog.text
+
+
+def test_get_tumour_normal_status_valid_sample_id(example_sample_metadata_xlsx):
+    # Test with a valid sample ID (replace 'VALID_SAMPLE_ID' with an actual ID from the file)
+    sample_id = "CATD0161a"
+    status = get_tumour_normal_status(example_sample_metadata_xlsx, sample_id)
+    assert status in ["T", "N"], "The status should be 'T' or 'N'."
+    assert status == "T"
+
+
+def test_get_tumour_normal_status_invalid_sample_id(example_sample_metadata_xlsx):
+    # Test with an invalid sample ID
+    sample_id = "INVALID_SAMPLE_ID"
+    with pytest.raises(
+        ValueError, match=f"Sample ID '{sample_id}' not found in any sheet."
+    ):
+        get_tumour_normal_status(example_sample_metadata_xlsx, sample_id)
+
+
+def test_get_tumour_normal_status_missing_columns():
+    # Create a temporary DataFrame with missing columns and save to an Excel file
+    df = pd.DataFrame(
+        {"Some Other Column": ["A", "B", "C"], "Another Column": [1, 2, 3]}
+    )
+    temp_file = Path("/tmp/missing_columns.xlsx")
+    df.to_excel(temp_file, index=False, sheet_name="Sheet1")
+
+    with pytest.raises(
+        ValueError,
+        match=r"^Required columns \('Sanger DNA ID', 'T/N'\) are missing in sheet",
+    ):
+        get_tumour_normal_status(temp_file, "ANY_ID")
+
+    # Clean up the temporary file
+    temp_file.unlink()
+
+
+def test_get_tumour_normal_status_multiple_patient_samples():
+    # Create a DataFrame to test single character extraction
+    df = pd.DataFrame(
+        {
+            "Sanger DNA ID": ["Sample1", "Sample2", "Sample3", "Sample4", "Sample5"],
+            "T/N": ["T1", "N2", "T", "N1", "T5"],  # Includes different formats of T/N
+        }
+    )
+    temp_file = Path("/tmp/test_single_character_code.xlsx")
+    with pd.ExcelWriter(temp_file) as writer:
+        df.to_excel(writer, sheet_name="Sheet1", index=False)
+
+    try:
+        # Assert the single character extraction
+        assert get_tumour_normal_status(temp_file, "Sample1") == "T"
+        assert get_tumour_normal_status(temp_file, "Sample2") == "N"
+        assert get_tumour_normal_status(temp_file, "Sample3") == "T"
+        assert get_tumour_normal_status(temp_file, "Sample4") == "N"
+        assert get_tumour_normal_status(temp_file, "Sample5") == "T"
+
+    finally:
+        # Cleanup
+        temp_file.unlink()
+
+
+def test_get_tumour_normal_status_invalid_status():
+    # Create a DataFrame to test single character extraction, including an invalid T/N status
+    df = pd.DataFrame(
+        {
+            "Sanger DNA ID": [
+                "Sample1",
+                "Sample2",
+                "Sample3",
+                "Sample4",
+                "Sample5",
+                "SampleInvalid",
+            ],
+            "T/N": [
+                "T1",
+                "N2",
+                "T",
+                "N1",
+                "T5",
+                "InvalidStatus",
+            ],  # Includes valid and invalid T/N statuses
+        }
+    )
+    temp_file = Path("/tmp/test_single_character_code_with_invalid.xlsx")
+    with pd.ExcelWriter(temp_file) as writer:
+        df.to_excel(writer, sheet_name="Sheet1", index=False)
+
+    try:
+        # Test invalid T/N status
+        with pytest.raises(
+            ValueError,
+            match="Invalid T/N status 'InvalidStatus' for sample ID 'SampleInvalid'.",
+        ):
+            get_tumour_normal_status(temp_file, "SampleInvalid")
+
+    finally:
+        # Cleanup
+        temp_file.unlink()
