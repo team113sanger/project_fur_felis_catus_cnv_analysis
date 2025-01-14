@@ -33,14 +33,9 @@ def example_sample_metadata_xlsx():
 
 
 def test_get_sample_id_from_file_path():
-    file = Path("/path/to/sample1.bam")
-    assert get_sample_id_from_file_path(file) == "sample1"
-
-    file = Path("/another/path/sample2.fastq.gz")
-    assert get_sample_id_from_file_path(file) == "sample2"
-
-    file = Path("sample3")
-    assert get_sample_id_from_file_path(file) == "sample3"
+    assert get_sample_id_from_file_path(Path("sample1.bam")) == "sample1"
+    assert get_sample_id_from_file_path(Path("sample1.bam.old")) == "sample1"
+    assert get_sample_id_from_file_path(Path("sample2.txt")) == "sample2"
 
 
 def test_get_sample_ids_for_file_list():
@@ -223,10 +218,15 @@ def test_determine_sample_sexes_missing_samples(tmp_path, caplog):
             df = pd.DataFrame(data)
             df.to_excel(writer, sheet_name=sheet, index=False)
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError,
+        match=f"Sample ID 'sample4' is missing from the metadata Excel '{excel_file}'.",
+    ) as excinfo:
         determine_sample_sexes(files, excel_file)
 
-    expected_error_message = f"The following samples are missing from the metadata Excel '{excel_file}': sample4."
+    expected_error_message = (
+        f"Sample ID 'sample4' is missing from the metadata Excel '{excel_file}'."
+    )
     assert expected_error_message in str(excinfo.value)
     assert expected_error_message in caplog.text
 
@@ -283,10 +283,15 @@ def test_split_file_list_by_sample_sex_with_missing_sex(tmp_path, caplog):
             df = pd.DataFrame(data)
             df.to_excel(writer, sheet_name=sheet, index=False)
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(
+        ValueError,
+        match=f"Sample ID 'sample3' is missing from the metadata Excel '{excel_file}'.",
+    ) as excinfo:
         split_file_list_by_sample_sex(files, excel_file)
 
-    expected_error_message = f"The following samples are missing from the metadata Excel '{excel_file}': sample3."
+    expected_error_message = (
+        f"Sample ID 'sample3' is missing from the metadata Excel '{excel_file}'."
+    )
     assert expected_error_message in str(excinfo.value)
     assert expected_error_message in caplog.text
 
