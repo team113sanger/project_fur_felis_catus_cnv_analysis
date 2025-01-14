@@ -52,7 +52,7 @@ def log_success(command: str, result: subprocess.CompletedProcess) -> None:
         command (str): The executed command.
         result (subprocess.CompletedProcess): The result of the command execution.
     """
-    logging.info(f"Successfully completed command: {command}")
+    logger.info(f"Successfully completed command: {command}")
     if result.stdout:
         logger.debug(f"Command Standard Output: {result.stdout.strip()}")
     if result.stderr:
@@ -73,6 +73,20 @@ def log_error(command: str, error: subprocess.CalledProcessError) -> None:
         logger.error(f"Error Details: {error.stderr.strip()}")
 
 
+def convert_file_list_to_string(files: t.List[Path]) -> str:
+    if len(files) == 0:
+        logger.warning("No files detected. Please check input data.")
+        return ""
+    elif len(files) == 1:
+        file_path_string = str(
+            files[0].absolute()
+        )  # Only one file, just use its' string
+    else:
+        file_path_string = " ".join([str(file.absolute()) for file in files])
+
+    return file_path_string
+
+
 # CNVKit command wrappers
 def run_cnvkit_access(reference_fasta: Path, outdir: Path) -> Path:
     """Run cnvkit.py acess on a given reference FASTA file
@@ -84,7 +98,7 @@ def run_cnvkit_access(reference_fasta: Path, outdir: Path) -> Path:
     Returns:
         Path: Path to the output BED file containing sequence-accessible coordinates
     """
-    logging.info("Preparing to run cnvkit.py access...")
+    logger.info("Preparing to run cnvkit.py access...")
     if is_fasta(reference_fasta):
         fasta_stem = reference_fasta.stem
         output_bed_name = f"access-{fasta_stem}.bed"
@@ -119,7 +133,7 @@ def run_cnvkit_autobin(
     Returns:
         dict[Path]: A dictionary containing the target and antitarget BED files. Respective keys are 'target' and 'antitarget'
     """
-    logging.info("Preparing to run cnvkit.py autobin...")
+    logger.info("Preparing to run cnvkit.py autobin...")
     # Validate input baitset BED and construct output BED paths
     if is_bed(baitset_bed):
         output_target_bed_name = baitset_bed.name.replace(".bed", ".target.bed")
@@ -159,18 +173,16 @@ def run_cnvkit_coverage(bam_file: Path, interval_bed: Path, outdir: Path) -> Non
 
     # Check if BAM file is valid
     if is_bam(bam_file):
-        logging.info(f"BAM file {str(bam_file)} is valid")
+        logger.info(f"BAM file {str(bam_file)} is valid")
     else:
-        logging.error(
-            f"BAM file {str(bam_file)} is not valid. Please check input data."
-        )
+        logger.error(f"BAM file {str(bam_file)} is not valid. Please check input data.")
         is_valid = False
 
     # Check if BED file is valid
     if is_bed(interval_bed):
-        logging.info(f"BED file {str(interval_bed)} is valid")
+        logger.info(f"BED file {str(interval_bed)} is valid")
     else:
-        logging.error(
+        logger.error(
             f"BED file {str(interval_bed)} is not valid. Please check input data."
         )
         is_valid = False
@@ -193,3 +205,255 @@ def run_cnvkit_coverage(bam_file: Path, interval_bed: Path, outdir: Path) -> Non
     run_command(cmd)
 
     return output_file_path
+
+
+def run_cnvkit_reference(
+    coverage_files: t.List[Path],
+    reference_fasta: Path,
+    output_prefix: str,
+    outdir: Path,
+    sex: t.Literal["male", "female"],
+) -> Path:
+    # Construct a string containing the coverage file paths to pass to cvkit.py reference
+    coverage_files_as_string = convert_file_list_to_string(coverage_files)
+
+    # Construct output file path
+    output_file_name = f"{output_prefix}.reference.cnn"
+    output_file_path = outdir / output_file_name
+
+    # Construct cnvkit.py reference command
+    cnvkit_reference_command = f"cnvkit.py reference {coverage_files_as_string} -f {str(reference_fasta)} -o {str(output_file_path)}"
+
+    # If dealing with male samples, create a male reference with -y
+    if sex == "male":
+        cnvkit_reference_command += " -y"
+
+    # Run cnvkit.py reference command
+    run_command(cnvkit_reference_command)
+
+    return output_file_path
+
+
+def run_cnvkit_fix(
+    target_coverage_file: Path,
+    antitarget_coverage_file: Path,
+    copy_number_reference_file: Path,
+    output_prefix: str,
+    outdir: Path,
+) -> Path:
+    # Construct output file path
+    output_file_name = f"{output_prefix}.cnr"
+    output_file_path = outdir / output_file_name
+
+    # Construct cnvkit.py fix command
+    cnvkit_fix_command = f"cnvkit.py fix {str(target_coverage_file)} {str(antitarget_coverage_file)} {str(copy_number_reference_file)} -o {str(output_file_path)}"
+
+    # Run cnvkit.py fix command
+    run_command(cnvkit_fix_command)
+
+    return output_file_path
+
+
+def run_cnvkit_genemetrics(
+    ratio_file: Path,
+    threshold: float,
+    min_probes: int,
+    output_prefix: str,
+    outdir: Path,
+    sex: t.Literal["male", "female"],
+    segment_file: Path = None,
+) -> Path:
+    """
+    Run cnvkit.py genemetrics on a given bin-level log2 ratio file (Sample.cnr).
+    Optionally include a segmentation file (Sample.cns). Returns the path to the output genemetrics file.
+
+    Parameters:
+        ratio_file (Path): Path to the ratio file (Sample.cnr).
+        threshold (float): Threshold value for calling copy number variations.
+        min_probes (int): Minimum number of probes required for a call.
+        output_prefix (str): Prefix for the output file.
+        outdir (Path): Directory to save the output file.
+        sex (str): Sample sex, "male" or "female".
+        segment_file (Path, optional): Path to the segmentation file (Sample.cns). Defaults to None.
+
+    Returns:
+        Path: Path to the generated genemetrics output file.
+    """
+    # Determine the output file name based on whether a segmentation file is provided
+    suffix = "segments" if segment_file else "ratios"
+    output_file_name = f"{output_prefix}.{suffix}.genemetrics.out"
+    output_file_path = outdir / output_file_name
+
+    # Construct the base cnvkit.py genemetrics command
+    cnvkit_genemetrics_command = (
+        f"cnvkit.py genemetrics {ratio_file} -t {threshold} -m {min_probes} "
+        f"-o {output_file_path}"
+    )
+
+    # Add the segmentation file option if provided
+    if segment_file:
+        cnvkit_genemetrics_command += f" -s {segment_file}"
+
+    # Add the male reference option if the sample is male
+    if sex == "male":
+        cnvkit_genemetrics_command += " -y"
+
+    # Run the command
+    run_command(cnvkit_genemetrics_command)
+
+    return output_file_path
+
+
+# CNVKit file validation
+def file_exists(file: Path) -> bool:
+    """
+    Check if the file exists.
+
+    Args:
+        file (Path): The file to check.
+
+    Returns:
+        bool: True if the file exists, False otherwise.
+    """
+    if not file.exists():
+        logger.warning(
+            f"The file '{file}' does not exist. Please check the input path."
+        )
+        return False
+    return True
+
+
+def is_regular_file(file: Path) -> bool:
+    """
+    Check if the path is a regular file.
+
+    Args:
+        file (Path): The file to check.
+
+    Returns:
+        bool: True if it's a regular file, False otherwise.
+    """
+    if not file.is_file():
+        logger.warning(
+            f"The path '{file}' is not a valid file. Please check the input."
+        )
+        return False
+    return True
+
+
+def has_correct_suffix(file: Path, expected_suffix: str) -> bool:
+    """
+    Check if the file has the expected suffix.
+
+    Args:
+        file (Path): The file to check.
+        expected_suffix (str): The expected file suffix.
+
+    Returns:
+        bool: True if the file has the expected suffix, False otherwise.
+    """
+    if not file.name.endswith(expected_suffix):
+        logger.warning(
+            f"The file '{file}' has an unexpected suffix. Expected a '{expected_suffix}' file."
+        )
+        return False
+    return True
+
+
+def has_expected_header(file: Path, expected_header: str) -> bool:
+    """
+    Check if the file has the expected header.
+
+    Args:
+        file (Path): The file to check.
+        expected_header (str): The expected header line in the file.
+
+    Returns:
+        bool: True if the file has the expected header, False otherwise.
+    """
+    try:
+        with file.open() as f:
+            actual_header = f.readline().strip()
+        if actual_header == expected_header:
+            logger.info(f"Successfully validated the structure of '{file}'.")
+            return True
+        else:
+            logger.warning(
+                f"The file '{file}' has unexpected columns. Expected: '{expected_header}'"
+            )
+            return False
+    except Exception as e:
+        logger.error(f"An error occurred while reading the file '{file}': {e}")
+        return False
+
+
+def is_valid_coverage_file(
+    file: Path,
+    expected_suffix: str = ".coverage.cnn",
+    expected_header: str = "chromosome\tstart\tend\tgene\tdepth\tlog2",
+) -> bool:
+    """
+    Check if an input coverage file has the expected structure.
+
+    Args:
+        file (Path): The file to validate.
+        expected_suffix (str): The expected file suffix.
+        expected_header (str): The expected header line in the file.
+
+    Returns:
+        bool: True if the file has the expected structure, False otherwise.
+    """
+    return (
+        file_exists(file)
+        and is_regular_file(file)
+        and has_correct_suffix(file, expected_suffix)
+        and has_expected_header(file, expected_header)
+    )
+
+
+def validate_sample_coverage_files(
+    sample_id: str, sample_coverage_files: t.List[Path]
+) -> t.Tuple[Path, Path]:
+    """
+    Validates that a sample has exactly one target coverage file and one antitarget coverage file.
+
+    Args:
+        sample_id (str): The unique identifier of the sample.
+        sample_coverage_files (List[Path]): A list of file paths to check.
+
+    Returns:
+        Tuple[Path, Path]: A tuple containing the target coverage file and the antitarget coverage file.
+
+    Raises:
+        ValueError: If the expected files are missing or their counts are incorrect.
+
+    Logs:
+        Logs warnings for unexpected counts and information about successfully identified files.
+    """
+
+    def filter_files(file_list: t.List[Path], keyword: str) -> t.List[Path]:
+        """Filter files containing the specified keyword in their names."""
+        return [file for file in file_list if keyword in file.name]
+
+    target_files = filter_files(sample_coverage_files, ".targetcoverage.cnn")
+    antitarget_files = filter_files(sample_coverage_files, ".antitargetcoverage")
+
+    if not target_files or not antitarget_files:
+        raise ValueError(
+            f"Insufficient coverage files for sample '{sample_id}'. "
+            f"Expected one target and one antitarget file, but found: "
+            f"Target files: {len(target_files)}, Antitarget files: {len(antitarget_files)}."
+        )
+
+    if len(target_files) > 1 or len(antitarget_files) > 1:
+        logger.warning(
+            f"Unexpected number of coverage files for sample '{sample_id}'. "
+            f"Target files: {target_files}, Antitarget files: {antitarget_files}."
+        )
+
+    logger.info(
+        f"Successfully identified coverage files for sample '{sample_id}'. "
+        f"Target file: {target_files[0]}, Antitarget file: {antitarget_files[0]}."
+    )
+
+    return target_files[0], antitarget_files[0]
