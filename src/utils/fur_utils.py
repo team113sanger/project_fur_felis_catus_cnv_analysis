@@ -160,6 +160,52 @@ def expand_sex_abbreviation(sex: str) -> str:
         raise ValueError(f"Unrecognised value for sex: {sex}. Expected M, F or U.")
 
 
+def get_sample_sex(sample_id: str, sample_metadata_xlsx: Path) -> str:
+    """
+    Extract the sex for a given sample ID from the metadata Excel file.
+
+    Args:
+        sample_id (str): The sample ID for which to retrieve the sex.
+        sample_metadata_xlsx (Path): Path to the metadata Excel file.
+
+    Returns:
+        str: The sex of the given sample ID (expanded format: "Male", "Female", or "Unknown").
+
+    Raises:
+        ValueError: If the sample ID is not found or if the sex value is unexpected.
+    """
+    # Load the sample metadata spreadsheet
+    sample_metadata_spreadsheet = pd.ExcelFile(sample_metadata_xlsx)
+
+    # Iterate through each sheet (study) in the metadata spreadsheet
+    for sheet_name in sample_metadata_spreadsheet.sheet_names:
+        sheet_data = pd.read_excel(sample_metadata_spreadsheet, sheet_name=sheet_name)
+
+        # Check if the sample ID exists in the current sheet
+        sample_row = sheet_data[sheet_data["Sanger DNA ID"] == sample_id]
+        if not sample_row.empty:
+            # Extract the sex value
+            sex = sample_row.iloc[0]["Sex"]
+            if sex not in {"M", "F", "U"}:
+                logger.error(
+                    f"Unexpected sex value '{sex}' for sample '{sample_id}' in sheet '{sheet_name}'."
+                )
+                raise ValueError(
+                    f"Unexpected sex value '{sex}' for sample '{sample_id}'. Expected one of 'M', 'F', or 'U'."
+                )
+
+            # Expand the sex abbreviation and return it
+            return expand_sex_abbreviation(sex)
+
+    # If the sample ID was not found in any sheet, raise an error
+    logger.error(
+        f"Sample ID '{sample_id}' is missing from the metadata Excel '{sample_metadata_xlsx}'."
+    )
+    raise ValueError(
+        f"Sample ID '{sample_id}' is missing from the metadata Excel '{sample_metadata_xlsx}'."
+    )
+
+
 def determine_sample_sexes(
     file_list: t.List[Path], sample_metadata_xlsx: Path
 ) -> t.Dict[str, str]:
@@ -172,30 +218,13 @@ def determine_sample_sexes(
     # Initialise a dictionary to store each sample's sex
     sample_sex_dict = dict()
 
-    # Load in the sample metadata spreadsheet
-    sample_metadata_spreadsheet = pd.ExcelFile(sample_metadata_xlsx)
-
-    # Iterate through each sheet (study) in the metadata spreadsheet
-    for sheet_name in sample_metadata_spreadsheet.sheet_names:
-        sheet_data = pd.read_excel(sample_metadata_spreadsheet, sheet_name=sheet_name)
-
-        # Filter for rows that include samples from the set of sample IDs
-        filtered_data = sheet_data[sheet_data["Sanger DNA ID"].isin(sample_ids)]
-
-        # Add the sample name and its sex to the dictionary
-        for _, row in filtered_data.iterrows():
-            sex = row["Sex"]
-            if sex not in {"M", "F", "U"}:
-                logger.error(
-                    f"Unexpected sex value '{sex}' for sample '{row['Sanger DNA ID']}' in sheet '{sheet_name}'."
-                )
-                raise ValueError(
-                    f"Unexpected sex value '{sex}' for sample '{row['Sanger DNA ID']}'. "
-                    f"Expected one of 'M', 'F', or 'U'."
-                )
-
-            expanded_sex = expand_sex_abbreviation(sex)
-            sample_sex_dict[row["Sanger DNA ID"]] = expanded_sex
+    # Use the helper function to extract the sex for each sample ID
+    for sample_id in sample_ids:
+        try:
+            sample_sex_dict[sample_id] = get_sample_sex(sample_id, sample_metadata_xlsx)
+        except ValueError as e:
+            logger.error(str(e))
+            raise
 
     # Identify missing samples
     missing_samples = sample_ids - sample_sex_dict.keys()
