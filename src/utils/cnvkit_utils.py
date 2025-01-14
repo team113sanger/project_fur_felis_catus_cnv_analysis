@@ -1,6 +1,7 @@
 import logging
-import subprocess
 from pathlib import Path
+import subprocess
+import typing as t
 
 from utils.file_format_checker import is_bam, is_bed, is_fasta
 
@@ -9,22 +10,67 @@ logger = logging.getLogger(__name__)
 
 # Helper functions
 def run_command(command: str) -> None:
-    """Run a given command using subprocess, including loggin statements and exception handling
+    """Run a given command using subprocess, including logging statements and exception handling.
 
     Args:
-        command (str): Command to be executed
+        command (str): Command to be executed.
     """
     logger.debug(f"Executing command: {command}")
     try:
-        command_result = subprocess.run(
-            command, shell=True, capture_output=True, text=True
-        )
-        if command_result.returncode != 0:
-            logger.error(f"Error in running {command}: {command_result.stderr}")
-        else:
-            logger.info(f"Successfully completed command: {command}")
-    except Exception as e:
-        logger.error(f"Exception occurred while running command: {str(e)}")
+        result = execute_command(command)
+        log_success(command, result)
+    except subprocess.CalledProcessError as e:
+        log_error(command, e)
+
+
+def execute_command(command: str) -> subprocess.CompletedProcess:
+    """Execute a command using subprocess and return the result.
+
+    Args:
+        command (str): Command to execute.
+
+    Returns:
+        subprocess.CompletedProcess: The result of the executed command.
+
+    Raises:
+        subprocess.CalledProcessError: If the command fails.
+    """
+    command_list = command.split()
+    return subprocess.run(
+        command_list,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
+
+
+def log_success(command: str, result: subprocess.CompletedProcess) -> None:
+    """Log the success of a command execution.
+
+    Args:
+        command (str): The executed command.
+        result (subprocess.CompletedProcess): The result of the command execution.
+    """
+    logging.info(f"Successfully completed command: {command}")
+    if result.stdout:
+        logger.debug(f"Command Standard Output: {result.stdout.strip()}")
+    if result.stderr:
+        logger.debug(f"Command Standard Error: {result.stderr.strip()}")
+
+
+def log_error(command: str, error: subprocess.CalledProcessError) -> None:
+    """Log details of a failed command execution.
+
+    Args:
+        command (str): The command that failed.
+        error (subprocess.CalledProcessError): The exception raised.
+    """
+    logger.error(f"Command '{command}' failed with exit code {error.returncode}")
+    if error.stdout:
+        logger.error(f"Error Output: {error.stdout.strip()}")
+    if error.stderr:
+        logger.error(f"Error Details: {error.stderr.strip()}")
 
 
 # CNVKit command wrappers
@@ -55,7 +101,7 @@ def run_cnvkit_access(reference_fasta: Path, outdir: Path) -> Path:
 
 
 def run_cnvkit_autobin(
-    bam_files: list[Path],
+    bam_files: t.List[Path],
     baitset_bed: Path,
     access_bed: Path,
     refflat_file: Path,
@@ -106,3 +152,44 @@ def run_cnvkit_autobin(
     target_bed_dict["antitarget"] = Path(output_antitarget_bed_path)
 
     return target_bed_dict
+
+
+def run_cnvkit_coverage(bam_file: Path, interval_bed: Path, outdir: Path) -> None:
+    is_valid = True
+
+    # Check if BAM file is valid
+    if is_bam(bam_file):
+        logging.info(f"BAM file {str(bam_file)} is valid")
+    else:
+        logging.error(
+            f"BAM file {str(bam_file)} is not valid. Please check input data."
+        )
+        is_valid = False
+
+    # Check if BED file is valid
+    if is_bed(interval_bed):
+        logging.info(f"BED file {str(interval_bed)} is valid")
+    else:
+        logging.error(
+            f"BED file {str(interval_bed)} is not valid. Please check input data."
+        )
+        is_valid = False
+
+    # If any file checks failed, raise an error
+    if not is_valid:
+        raise ValueError(
+            f"{str(bam_file)} is not a valid BAM file and/or {str(interval_bed)} is not a valid BED file. Please check input data."
+        )
+
+    # If all file checks passed, run cnvkit.py coverage
+    target_type = interval_bed.stem.split(".")[-1]
+    output_file_name = bam_file.name.replace(".bam", f".{target_type}coverage.cnn")
+    output_file_path = outdir / output_file_name
+
+    # Construct cnvkit.py coverage command
+    cmd = f"cnvkit.py coverage {str(bam_file)} {str(interval_bed)} -o {str(output_file_path)}"
+
+    # Run cnvkit.py coverage command
+    run_command(cmd)
+
+    return output_file_path
