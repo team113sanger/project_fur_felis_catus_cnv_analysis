@@ -41,6 +41,9 @@ def extract_metadata_files_from_config_json(config_json: Path) -> t.Dict[str, st
 
     # Define the expected keys from the config JSON
     expected_keys = (
+        "all_bams",
+        "tumour_bams",
+        "normal_bams",
         "reference_fasta",
         "baitset_bed",
         "refflat_file",
@@ -57,7 +60,17 @@ def extract_metadata_files_from_config_json(config_json: Path) -> t.Dict[str, st
             f"The following keys are missing in {str(config_json)}: {', '.join(missing_keys)}. Please check input data."
         )
 
-    return metadata
+    # Convert file paths to Path objects
+    metadata_with_paths = {}
+    for key, value in metadata.items():
+        if isinstance(value, str):
+            metadata_with_paths[key] = Path(value)
+        elif isinstance(value, list):
+            metadata_with_paths[key] = [Path(v) for v in value]
+        else:
+            metadata_with_paths[key] = value  # Keep as-is for non-path-related values
+
+    return metadata_with_paths
 
 
 # -----------------------------------------------
@@ -121,6 +134,23 @@ def remove_unwanted_sample_files(
 # -----------------------------------------------
 
 
+def expand_sex_abbreviation(sex: str) -> str:
+    """
+    Expands the sex abbreviations found in the metadata spreadsheet to their full word counterparts for better readability
+    M -> male
+    F -> female
+    U -> unknown
+    """
+    if sex == "M":
+        return "male"
+    elif sex == "F":
+        return "female"
+    elif sex == "U":
+        return "unknown"
+    else:
+        raise ValueError(f"Unrecognised value for sex: {sex}. Expected M, F or U.")
+
+
 def determine_sample_sexes(
     file_list: t.List[Path], sample_metadata_xlsx: Path
 ) -> t.Dict[str, str]:
@@ -154,7 +184,9 @@ def determine_sample_sexes(
                     f"Unexpected sex value '{sex}' for sample '{row['Sanger DNA ID']}'. "
                     f"Expected one of 'M', 'F', or 'U'."
                 )
-            sample_sex_dict[row["Sanger DNA ID"]] = sex
+
+            expanded_sex = expand_sex_abbreviation(sex)
+            sample_sex_dict[row["Sanger DNA ID"]] = expanded_sex
 
     # Identify missing samples
     missing_samples = sample_ids - sample_sex_dict.keys()
@@ -241,3 +273,38 @@ def get_tumour_normal_status(sample_metadata_xlsx: Path, sample_id: str):
 
     # Raise an error if the sample ID is not found
     raise ValueError(f"Sample ID '{sample_id}' not found in any sheet.")
+
+
+# -----------------------------------------------
+# Functions for categorising files based on their tumour/normal status
+# -----------------------------------------------
+
+
+def categorise_files_by_tumour_normal_status(
+    files: t.List[Path], sample_metadata_xlsx: Path
+) -> t.DefaultDict[str, t.List[Path]]:
+    logging.info("Categorising files based on their tumour/normal status ...")
+
+    # Initialise a defaultdict to store categorised files
+    tn_status_file_dict = defaultdict(list)
+
+    for file in files:
+        sample_id = get_sample_id_from_file_path(file)
+        tn_status = get_tumour_normal_status(sample_metadata_xlsx, sample_id)
+
+        if tn_status == "T":
+            tn_status_file_dict["T"].append(file)
+        elif tn_status == "N":
+            tn_status_file_dict["N"].append(file)
+        else:
+            logging.error(
+                "Unable to categorise files based on their tumour/normal status"
+            )
+            raise ValueError(
+                f"Got unexpected tumour normal status '{tn_status}' for sample ID '{sample_id}'. Expected 'T' or 'N'."
+            )
+
+    logging.debug(f"Categorised files: {tn_status_file_dict}")
+    logging.info("Successfully categorised files by their tumour/normal status")
+
+    return tn_status_file_dict
