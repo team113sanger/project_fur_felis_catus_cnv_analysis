@@ -16,6 +16,7 @@ from utils.fur_utils import (
     determine_sample_sexes,
     split_file_list_by_sample_sex,
     get_tumour_normal_status,
+    categorise_files_by_tumour_normal_status,
 )
 
 
@@ -384,3 +385,38 @@ def test_get_tumour_normal_status_invalid_status():
     finally:
         # Cleanup
         temp_file.unlink()
+
+
+def test_categorise_files_by_tumour_normal_status():
+    # Mock sample metadata
+    df = pd.DataFrame(
+        {
+            "Sanger DNA ID": ["Sample1", "Sample2", "Sample3", "Sample4"],
+            "T/N": ["T1", "N2", "T", "N1"],
+        }
+    )
+    temp_metadata_file = Path("/tmp/sample_metadata.xlsx")
+    with pd.ExcelWriter(temp_metadata_file) as writer:
+        df.to_excel(writer, sheet_name="Sheet1", index=False)
+
+    # Mock files with sample IDs embedded
+    files = [
+        Path("/path/to/Sample1.fastq"),
+        Path("/path/to/Sample2.fastq"),
+        Path("/path/to/Sample3.fastq"),
+        Path("/path/to/Sample4.fastq"),
+    ]
+
+    # Call the function
+    result = categorise_files_by_tumour_normal_status(files, temp_metadata_file)
+
+    # Expected output
+    expected = defaultdict(list)
+    expected["T"] = [Path("/path/to/Sample1.fastq"), Path("/path/to/Sample3.fastq")]
+    expected["N"] = [Path("/path/to/Sample2.fastq"), Path("/path/to/Sample4.fastq")]
+
+    # Assert the result matches the expected output
+    assert result == expected
+
+    # Cleanup
+    temp_metadata_file.unlink()
