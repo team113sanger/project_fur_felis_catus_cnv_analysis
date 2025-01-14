@@ -2,9 +2,14 @@ import argparse
 import json
 import logging
 from pathlib import Path
+import typing as t
 
 from utils.cnvkit_utils import run_cnvkit_access, run_cnvkit_autobin
 from utils.file_format_checker import is_fasta, is_bed, validate_bam_files
+from utils.fur_utils import (
+    remove_unwanted_sample_files,
+    categorise_files_by_tumour_normal_status,
+)
 
 
 def configure_logging():
@@ -26,7 +31,14 @@ def parse_arguments():
         type=Path,
         nargs="+",
         required=True,
-        help="Path to tumour and normal BAM files. Used to run cnvkit.py autobin. Will not appear in output config file.",
+        help="Path to tumour and normal BAM files.",
+    )
+    parser.add_argument(
+        "-e",
+        metavar="EXCLUDE_FILE",
+        type=Path,
+        required=False,
+        help="Path to exclude file containing samples to remove from final analyses",
     )
     parser.add_argument(
         "-f",
@@ -76,6 +88,7 @@ def parse_arguments():
 
 
 def generate_config_file(
+    bam_files: t.List[Path],
     reference_fasta: Path,
     baitset_bed: Path,
     refflat_file: Path,
@@ -87,8 +100,18 @@ def generate_config_file(
 ) -> Path:
     logging.info("Generating config file containing CNVKit static files...")
 
+    # Categorise the BAM files based on their tumour/normal status
+    tn_status_bam_dict = categorise_files_by_tumour_normal_status(
+        bam_files, sample_metadata_xlsx
+    )
+    tumour_bams = [str(bam) for bam in tn_status_bam_dict["T"]]
+    normal_bams = [str(bam) for bam in tn_status_bam_dict["N"]]
+
     # Initialise a dictionary containing the config file data
     config_data = {
+        "all_bams": [str(bam) for bam in bam_files],
+        "tumour_bams": tumour_bams,
+        "normal_bams": normal_bams,
         "reference_fasta": str(reference_fasta),
         "baitset_bed": str(baitset_bed),
         "refflat_file": str(refflat_file),
@@ -121,6 +144,7 @@ def main():
     args = parse_arguments()
 
     validated_bams = validate_bam_files(args.b)
+    exclude_file = args.e
     if is_fasta(args.f):
         reference_fasta = args.f
     else:
@@ -145,16 +169,26 @@ def main():
         "Command line arguments will now be used to generate CNVKit statis files ..."
     )
 
+    # Remove any unwanted samples from final BAM list
+    if exclude_file:
+        logging.info("Exclude file detected. Filtering normal BAMs...")
+        filtered_bams = remove_unwanted_sample_files(validated_bams, exclude_file)
+        logging.debug(f"Filtered BAM files: {filtered_bams}")
+    else:
+        logging.info("No exclude file detected. Using unfiltered normal BAMs...")
+        filtered_bams = validated_bams
+
     # Run cnvkit.py access
     access_bed = run_cnvkit_access(reference_fasta, outdir)
 
     # Run cnvkit.py autobin
     target_bed_dict = run_cnvkit_autobin(
-        validated_bams, baitset_bed, access_bed, refflat_file, outdir
+        filtered_bams, baitset_bed, access_bed, refflat_file, outdir
     )
 
     # Generate configuration file including newly generated reference files
     generate_config_file(
+        filtered_bams,
         reference_fasta,
         baitset_bed,
         refflat_file,
