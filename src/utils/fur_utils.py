@@ -29,17 +29,26 @@ def get_sample_ids_for_file_list(file_list: t.List[Path]) -> set:
     return sample_ids
 
 
-# -----------------------------------------------
-# Functions for processing the config file
-# -----------------------------------------------
-def extract_metadata_files_from_config_json(config_json: Path) -> t.Dict[str, str]:
-    """Extract all metadata file paths from the config JSON and return as a dictionary"""
+def get_sample_specific_files(files: t.List[Path], sample: str) -> t.List[Path]:
+    """Get the files corresponding to a particular sample and return as a list"""
+    sample_files = [file for file in files if sample in file.name]
 
-    logging.info(f"Extracting metadata file paths from {str(config_json)} ...")
-    with open(config_json, "r") as json_file:
+    return sample_files
+
+
+# -----------------------------------------------
+# Functions for processing the parameter file
+# -----------------------------------------------
+def extract_metadata_files_from_parameter_json(
+    parameter_json: Path,
+) -> t.Dict[str, str]:
+    """Extract all metadata file paths from the parameter JSON and return as a dictionary"""
+
+    logging.info(f"Extracting metadata file paths from {str(parameter_json)} ...")
+    with open(parameter_json, "r") as json_file:
         metadata = json.load(json_file)
 
-    # Define the expected keys from the config JSON
+    # Define the expected keys from the parameter JSON
     expected_keys = (
         "all_bams",
         "tumour_bams",
@@ -57,7 +66,7 @@ def extract_metadata_files_from_config_json(config_json: Path) -> t.Dict[str, st
 
     if missing_keys:
         raise KeyError(
-            f"The following keys are missing in {str(config_json)}: {', '.join(missing_keys)}. Please check input data."
+            f"The following keys are missing in {str(parameter_json)}: {', '.join(missing_keys)}. Please check input data."
         )
 
     # Convert file paths to Path objects

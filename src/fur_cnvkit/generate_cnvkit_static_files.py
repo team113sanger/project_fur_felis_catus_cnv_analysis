@@ -69,12 +69,12 @@ def parse_arguments():
         help="Path to sample metadata Excel spreadsheet.",
     )
     parser.add_argument(
-        "-c",
-        metavar="CONFIG_PREFIX",
+        "-p",
+        metavar="PARAMETER_FILE_PREFIX",
         type=str,
         required=False,
-        default="config.json",
-        help="Prefix of output configuration file to store CNVKit static files ({prefix}.config.json). Can be used in downstream scripts to avoid re-specifying paths. Will be written to outdir (-o). Default: config.json",
+        default="parameters.json",
+        help="Prefix of output parameter file to store CNVKit static files ({prefix}.parameters.json). Can be used in downstream scripts to avoid re-specifying paths. Will be written to outdir (-o). Default: parameters.json",
     )
     parser.add_argument(
         "-o",
@@ -87,7 +87,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def generate_config_file(
+def generate_parameter_file(
     bam_files: t.List[Path],
     reference_fasta: Path,
     baitset_bed: Path,
@@ -95,10 +95,10 @@ def generate_config_file(
     sample_metadata_xlsx: Path,
     targets_bed: Path,
     antitargets_bed: Path,
-    config_file_name: str,
+    parameter_file_name: str,
     outdir: Path,
 ) -> Path:
-    logging.info("Generating config file containing CNVKit static files...")
+    logging.info("Generating parameter file containing CNVKit static files...")
 
     # Categorise the BAM files based on their tumour/normal status
     tn_status_bam_dict = categorise_files_by_tumour_normal_status(
@@ -107,8 +107,8 @@ def generate_config_file(
     tumour_bams = [str(bam) for bam in tn_status_bam_dict["T"]]
     normal_bams = [str(bam) for bam in tn_status_bam_dict["N"]]
 
-    # Initialise a dictionary containing the config file data
-    config_data = {
+    # Initialise a dictionary containing the parameter file data
+    parameter_data = {
         "all_bams": [str(bam) for bam in bam_files],
         "tumour_bams": tumour_bams,
         "normal_bams": normal_bams,
@@ -120,21 +120,21 @@ def generate_config_file(
         "antitargets_bed": str(antitargets_bed),
     }
 
-    # Construct output config file path
-    output_config = outdir / f"{config_file_name}.config.json"
+    # Construct output parameter file path
+    output_parameter_file = outdir / f"{parameter_file_name}.parameters.json"
 
-    # Write data to output config file path
-    logging.info(f"Writing config file to {str(output_config)}")
+    # Write data to output parameter file path
+    logging.info(f"Writing parameter file to {str(output_parameter_file)}")
     try:
-        with output_config.open("w") as json_file:
-            json.dump(config_data, json_file, indent=4)
+        with output_parameter_file.open("w") as json_file:
+            json.dump(parameter_data, json_file, indent=4)
             json_file.write("\n")
-        logging.info("Successfully wrote config file.")
+        logging.info("Successfully wrote parameter file.")
     except Exception as e:
-        logging.warning(f"Error writing config file: {e}")
+        logging.warning(f"Error writing parameter file: {e}")
         raise
 
-    return output_config
+    return output_parameter_file
 
 
 def main():
@@ -155,7 +155,7 @@ def main():
         raise ValueError(f"{str(args.t)} is not a valid FASTA file.")
     refflat_file = args.r
     sample_metadata_xlsx = args.m
-    config_file_name = args.c
+    parameter_file_name = args.p
     outdir = args.o
 
     logging.debug(f"BAM files: {validated_bams}")
@@ -186,8 +186,8 @@ def main():
         filtered_bams, baitset_bed, access_bed, refflat_file, outdir
     )
 
-    # Generate configuration file including newly generated reference files
-    generate_config_file(
+    # Generate parameter file including newly generated reference files
+    generate_parameter_file(
         filtered_bams,
         reference_fasta,
         baitset_bed,
@@ -195,7 +195,7 @@ def main():
         sample_metadata_xlsx,
         target_bed_dict["target"],
         target_bed_dict["antitarget"],
-        config_file_name,
+        parameter_file_name,
         outdir,
     )
 

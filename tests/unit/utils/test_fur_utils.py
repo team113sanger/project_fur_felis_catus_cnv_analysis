@@ -9,7 +9,7 @@ from tests.mocks.mock_files import get_example_sample_metadata_xlsx
 from utils.fur_utils import (
     get_sample_id_from_file_path,
     get_sample_ids_for_file_list,
-    extract_metadata_files_from_config_json,
+    extract_metadata_files_from_parameter_json,
     extract_sample_ids_from_exclude_file,
     filter_files_by_exclude_samples,
     remove_unwanted_sample_files,
@@ -74,18 +74,18 @@ def test_get_sample_ids_for_file_list():
 #     assert metadata == config
 
 
-def test_extract_metadata_files_from_config_json_missing_keys(tmp_path):
-    config = {
+def test_extract_metadata_files_from_parameter_json_missing_keys(tmp_path):
+    parameters = {
         "reference_fasta": "/path/to/reference.fasta",
         # Missing "baitset_bed" and others
     }
 
-    config_file = tmp_path / "config.json"
-    with open(config_file, "w") as f:
-        json.dump(config, f)
+    parameter_file = tmp_path / "config.json"
+    with open(parameter_file, "w") as f:
+        json.dump(parameters, f)
 
     with pytest.raises(KeyError) as excinfo:
-        extract_metadata_files_from_config_json(config_file)
+        extract_metadata_files_from_parameter_json(parameter_file)
 
     assert "baitset_bed" in str(excinfo.value)
 
