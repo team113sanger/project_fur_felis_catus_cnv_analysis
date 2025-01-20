@@ -4,10 +4,10 @@ from pathlib import Path
 
 # import typing as t
 
-from utils.cnvkit_utils import run_cnvkit_coverage
+from fur_cnvkit.utils.cnvkit_utils import run_cnvkit_coverage
 
 # from utils.file_format_checker import validate_bam_files
-from utils.fur_utils import (
+from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_config_json,
     # remove_unwanted_sample_files,
     split_file_list_by_sample_sex,
