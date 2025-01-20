@@ -6,7 +6,7 @@ from collections import defaultdict
 import re
 
 from tests.mocks.mock_files import get_example_sample_metadata_xlsx
-from utils.fur_utils import (
+from fur_cnvkit.utils.fur_utils import (
     get_sample_id_from_file_path,
     get_sample_ids_for_file_list,
     extract_metadata_files_from_parameter_json,

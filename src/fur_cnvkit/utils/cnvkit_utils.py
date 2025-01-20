@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import typing as t
 
-from utils.file_format_checker import is_bam, is_bed, is_fasta
+from fur_cnvkit.utils.file_format_checker import is_bam, is_bed, is_fasta
 
 logger = logging.getLogger(__name__)
 

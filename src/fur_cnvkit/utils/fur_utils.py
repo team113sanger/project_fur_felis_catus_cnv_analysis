@@ -258,6 +258,33 @@ def split_file_list_by_sample_sex(
 
 
 # -----------------------------------------------
+# Functions for filtering by sample study
+# -----------------------------------------------
+
+
+def get_sample_study(sample_metadata_xlsx: Path, sample_id: str) -> str:
+    """Get the study ID for the given sample from the sample metadata Excel spreadsheet"""
+
+    # Load the Excel file
+    excel_data = pd.ExcelFile(sample_metadata_xlsx)
+
+    # Iterate through each sheet in the file
+    for sheet_name in excel_data.sheet_names:
+        # Load the sheet into a DataFrame
+        df = excel_data.parse(sheet_name)
+
+        # Search for the sample ID
+        matched_row = df[df["Sanger DNA ID"] == sample_id]
+
+        # If a match is found, return the study ID
+        if not matched_row.empty:
+            return sheet_name
+
+    # Raise an error if the sample ID is not found
+    raise ValueError(f"Sample ID '{sample_id}' not found in any sheet.")
+
+
+# -----------------------------------------------
 # Functions for determining tumour/normal status of a given sample
 # -----------------------------------------------
 def get_tumour_normal_status(sample_metadata_xlsx: Path, sample_id: str):

@@ -1,7 +1,12 @@
 import pytest
 from pathlib import Path
 from unittest.mock import mock_open, patch
-from utils.file_format_checker import is_fasta, is_bam, is_bed, validate_bam_files
+from fur_cnvkit.utils.file_format_checker import (
+    is_fasta,
+    is_bam,
+    is_bed,
+    validate_bam_files,
+)
 
 
 # Tests for is_fasta

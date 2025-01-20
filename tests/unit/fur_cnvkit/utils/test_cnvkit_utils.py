@@ -1,7 +1,11 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from utils.cnvkit_utils import run_command, run_cnvkit_access, run_cnvkit_autobin
+from fur_cnvkit.utils.cnvkit_utils import (
+    run_command,
+    run_cnvkit_access,
+    run_cnvkit_autobin,
+)
 
 
 # Tests for run_cnvkit_access
