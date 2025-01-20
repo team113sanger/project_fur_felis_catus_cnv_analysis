@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 import typing as t
 
-from utils.cnvkit_utils import run_cnvkit_access, run_cnvkit_autobin
-from utils.file_format_checker import is_fasta, is_bed, validate_bam_files
-from utils.fur_utils import (
+from fur_cnvkit.utils.cnvkit_utils import run_cnvkit_access, run_cnvkit_autobin
+from fur_cnvkit.utils.file_format_checker import is_fasta, is_bed, validate_bam_files
+from fur_cnvkit.utils.fur_utils import (
     remove_unwanted_sample_files,
     categorise_files_by_tumour_normal_status,
 )
