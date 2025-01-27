@@ -29,9 +29,22 @@ def get_sample_ids_for_file_list(file_list: t.List[Path]) -> set:
     return sample_ids
 
 
-def get_sample_specific_files(files: t.List[Path], sample: str) -> t.List[Path]:
-    """Get the files corresponding to a particular sample and return as a list"""
-    sample_files = [file for file in files if sample in file.name]
+def get_sample_specific_files(
+    files: t.List[Path], sample: str, suffixes: t.Optional[t.List[str]] = None
+) -> t.List[Path]:
+    """
+    Get the files corresponding to a particular sample. If `suffixes` are provided,
+    only files whose suffix is in that list are returned. Otherwise, all files
+    containing `sample` in their filename are returned.
+    """
+    if suffixes is None:
+        suffixes = []
+
+    sample_files = [
+        file
+        for file in files
+        if (sample in file.name and any(file.name.endswith(suf) for suf in suffixes))
+    ]
 
     return sample_files
 
@@ -260,6 +273,18 @@ def split_file_list_by_sample_sex(
 # -----------------------------------------------
 # Functions for filtering by sample study
 # -----------------------------------------------
+
+
+def map_sample_ids_to_study_ids(
+    sample_ids: set, sample_metadata_xlsx: Path
+) -> t.Dict[str, str]:
+    sample_study_dict = defaultdict(list)
+
+    for sample_id in sample_ids:
+        study_id = get_sample_study(sample_metadata_xlsx, sample_id)
+        sample_study_dict[study_id].append(sample_id)
+
+    return sample_study_dict
 
 
 def get_sample_study(sample_metadata_xlsx: Path, sample_id: str) -> str:
