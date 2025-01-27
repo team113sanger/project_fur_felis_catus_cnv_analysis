@@ -2,14 +2,13 @@ import argparse
 import logging
 from pathlib import Path
 
-# import typing as t
-
-from fur_cnvkit.utils.cnvkit_utils import run_cnvkit_coverage
-
-# from utils.file_format_checker import validate_bam_files
+from fur_cnvkit.normal_vs_normal import perform_normal_vs_normal_comparisons
+from fur_cnvkit.utils.cnvkit_utils import (
+    run_cnvkit_coverage,
+    run_cnvkit_reference,
+)
 from fur_cnvkit.utils.fur_utils import (
-    extract_metadata_files_from_config_json,
-    # remove_unwanted_sample_files,
+    extract_metadata_files_from_parameter_json,
     split_file_list_by_sample_sex,
 )
 
@@ -30,27 +29,12 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Generate a copy number reference file for a given cohort of samples."
     )
-    # parser.add_argument(
-    #     "-n",
-    #     "--normal_bams",
-    #     type=Path,
-    #     nargs="+",
-    #     required=True,
-    #     help="Path to normal BAM(s) to generate copy number referemce with.",
-    # )
-    # parser.add_argument(
-    #     "-e",
-    #     "--exclude_file",
-    #     type=Path,
-    #     required=False,
-    #     help="Exclude file containing samples to exclude from copy number reference (One sample on each line).",
-    # )
     parser.add_argument(
-        "-c",
-        "--config",
+        "-p",
+        "--parameter_file",
         type=Path,
         required=True,
-        help="Path to the configuration file.",
+        help="Path to the parameter file.",
     )
     parser.add_argument(
         "-o", "--outdir", type=Path, required=True, help="Path to the output directory."
@@ -59,61 +43,19 @@ def parse_arguments():
     return parser.parse_args()
 
 
-# def process_normal_bams(
-#     normal_bams: t.List[Path],
-#     exclude_file: t.Optional[Path],
-#     sample_metadata_xlsx: Path
-# ) -> t.DefaultDict[str, t.List[Path]]:
-#     """
-#     Processes normal BAM files by validating them, optionally excluding samples present in the exclude file,
-#     and splitting the BAM list based on sample sex using the metadata Excel spreadsheet.
-
-#     Args:
-#         normal_bams (List[Path]): List of paths to normal BAM files.
-#         exclude_file (Optional[Path]): Path to a file specifying samples to exclude.
-#         sample_metadata_xlsx (Path): Path to the Excel file containing sample metadata.
-
-#     Returns:
-#         dict: A dictionary categorizing BAM files by sample sex.
-#     """
-
-#     # Validate the provided BAM files
-#     validated_bams = validate_bam_files(normal_bams)
-#     logging.debug(f"Validated BAM files: {validated_bams}")
-
-#     # Determine whether to filter BAMs based on the presence of an exclude file
-#     if exclude_file:
-#         logging.info('Exclude file detected. Filtering normal BAMs...')
-#         filtered_bams = remove_unwanted_sample_files(validated_bams, exclude_file)
-#         logging.debug(f"Filtered BAM files: {filtered_bams}")
-#     else:
-#         logging.info('No exclude file detected. Using unfiltered normal BAMs...')
-#         filtered_bams = validated_bams
-
-#     # Split the BAM files by sample sex using the provided metadata
-#     split_bams = split_file_list_by_sample_sex(filtered_bams, sample_metadata_xlsx)
-#     logging.debug(f"Split BAM files by sex: {split_bams}")
-
-#     return split_bams
-
-
 def main():
     # Get command line arguments
     logging.info("Getting command line arguments...")
     args = parse_arguments()
 
-    # normal_bams = args.normal_bams
-    # exclude_file = args.exclude_file
-    config_file = args.config
+    parameter_file = args.parameter_file
     outdir = args.outdir
 
-    # logging.debug(f"Normal BAMs: {normal_bams}")
-    # logging.debug(f"Exclude file: {exclude_file}")
-    logging.debug(f"Config file: {config_file}")
+    logging.debug(f"Parameter file: {parameter_file}")
     logging.debug(f"Outdir: {outdir}")
 
-    # Extract metadata files from config file
-    metadata = extract_metadata_files_from_config_json(config_file)
+    # Extract metadata files from parameter file
+    metadata = extract_metadata_files_from_parameter_json(parameter_file)
     normal_bams = metadata["normal_bams"]
     reference_fasta = metadata["reference_fasta"]
     baitset_bed = metadata["baitset_bed"]
@@ -128,33 +70,99 @@ def main():
     logging.debug(f"Targets BED: {str(targets_bed)}")
     logging.debug(f"Antitargets BED: {str(antitargets_bed)}")
 
-    # Process normal BAMs to get a dictionary of BAMs seperated by sex
-    # sex_seperated_normal_bams = process_normal_bams(normal_bams, exclude_file, sample_metadata_xlsx)
-    sex_seperated_normal_bams = split_file_list_by_sample_sex(
+    # Process normal BAMs to get a dictionary of BAMs separated by sex
+    sex_separated_normal_bams = split_file_list_by_sample_sex(
         normal_bams, sample_metadata_xlsx
     )
-    logging.debug(f"Split normal BAM files by sex: {sex_seperated_normal_bams}")
+    logging.debug(f"Split normal BAM files by sex: {sex_separated_normal_bams}")
 
     # Use CNVKit to generate a copy number reference for each sex
-    for sex in sex_seperated_normal_bams:
-        sex_outdir = Path(outdir / sex)
+    for sex in sex_separated_normal_bams:
+        sex_outdir = outdir / sex
         sex_outdir.mkdir(parents=True, exist_ok=True)
 
-        # Extract the sex-seperated normal BAMs for the given sex from the dictionary
-        sex_normal_bams = sex_seperated_normal_bams[sex]
+        # Extract the sex-separated normal BAMs for the given sex from the dictionary
+        sex_normal_bams = sex_separated_normal_bams[sex]
 
-        # Run CNVKit coverage on the sex separated BAMs
-        coverage_files = []
-        for bam in sex_normal_bams:
-            target_coverage_file = run_cnvkit_coverage(bam, targets_bed, sex_outdir)
-            antitarget_coverage_file = run_cnvkit_coverage(
-                bam, antitargets_bed, sex_outdir
+        # Run CNVKit coverage on the sex-separated BAMs
+        sex_normal_coverage_files = []
+
+        # Loop through the normal sample BAMs
+        for sample_bam in sex_normal_bams:
+            # Derive the sample name from the BAM file
+            sample_name = Path(sample_bam).stem
+
+            # Make a directory for coverage files, if it does not exist
+            coverage_file_dir = sex_outdir / "coverage_files"
+            coverage_file_dir.mkdir(parents=True, exist_ok=True)
+
+            # Derive the expected coverage file paths
+            sample_target_coverage_file = (
+                coverage_file_dir / f"{sample_name}.targetcoverage.cnn"
             )
-            coverage_files += [target_coverage_file, antitarget_coverage_file]
+            sample_antitarget_coverage_file = (
+                coverage_file_dir / f"{sample_name}.antitargetcoverage.cnn"
+            )
 
-        logging.debug(f"Coverage files: {coverage_files}")
+            # Check if the target coverage file exists
+            if sample_target_coverage_file.exists():
+                logging.info(
+                    f"Skipping generation of target coverage for {sample_name} "
+                    f"because {sample_target_coverage_file} already exists."
+                )
+            else:
+                # Run coverage if file does not exist
+                logging.info(
+                    f"Generating target coverage for {sample_name} "
+                    f" -> {sample_target_coverage_file}"
+                )
+                run_cnvkit_coverage(sample_bam, targets_bed, sex_outdir)
 
-        # Run CNVKit reference to create a new copy number reference using the coverage files
+            # Check if the antitarget coverage file exists
+            if sample_antitarget_coverage_file.exists():
+                logging.info(
+                    f"Skipping generation of antitarget coverage for {sample_name} "
+                    f"because {sample_antitarget_coverage_file} already exists."
+                )
+            else:
+                logging.info(
+                    f"Generating antitarget coverage for {sample_name} "
+                    f" -> {sample_antitarget_coverage_file}"
+                )
+                run_cnvkit_coverage(sample_bam, antitargets_bed, sex_outdir)
+
+            # Regardless of whether the files existed or were newly created,
+            # append them to the coverage file list.
+            sex_normal_coverage_files.extend(
+                [sample_target_coverage_file, sample_antitarget_coverage_file]
+            )
+
+        logging.debug(f"Coverage files: {sex_normal_coverage_files}")
+
+        # Perform pairwise normal vs. normal comparisons to filter coverage files
+        normal_vs_normal_dir = sex_outdir / "normal_vs_normal"
+        normal_vs_normal_dir.mkdir(parents=True, exist_ok=True)
+        filtered_coverage_files = perform_normal_vs_normal_comparisons(
+            sex_normal_coverage_files,
+            reference_fasta,
+            sample_metadata_xlsx,
+            normal_vs_normal_dir,
+        )
+
+        logging.debug(f"Filtered coverage files: {filtered_coverage_files}")
+
+        # Run CNVKit reference to create a new copy number reference using the filtered coverage files
+        sex_copy_number_reference_file = run_cnvkit_reference(
+            coverage_files=filtered_coverage_files,
+            reference_fasta=reference_fasta,
+            output_prefix=sex,
+            outdir=sex_outdir,
+            sex=sex,
+        )
+
+        logging.debug(
+            f"Copy number reference for {sex} generated at {str(sex_copy_number_reference_file)}"
+        )
 
 
 if __name__ == "__main__":
