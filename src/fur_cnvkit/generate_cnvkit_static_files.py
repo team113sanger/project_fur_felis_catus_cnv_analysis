@@ -93,6 +93,7 @@ def generate_parameter_file(
     baitset_bed: Path,
     refflat_file: Path,
     sample_metadata_xlsx: Path,
+    access_bed: Path,
     targets_bed: Path,
     antitargets_bed: Path,
     parameter_file_name: str,
@@ -116,6 +117,7 @@ def generate_parameter_file(
         "baitset_bed": str(baitset_bed),
         "refflat_file": str(refflat_file),
         "sample_metadata_xlsx": str(sample_metadata_xlsx),
+        "access_bed": str(access_bed),
         "targets_bed": str(targets_bed),
         "antitargets_bed": str(antitargets_bed),
     }
@@ -193,6 +195,7 @@ def main():
         baitset_bed,
         refflat_file,
         sample_metadata_xlsx,
+        access_bed,
         target_bed_dict["target"],
         target_bed_dict["antitarget"],
         parameter_file_name,
