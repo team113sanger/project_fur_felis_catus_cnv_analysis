@@ -457,3 +457,19 @@ def validate_sample_coverage_files(
     )
 
     return target_files[0], antitarget_files[0]
+
+
+# CNVKit file parsing
+def parse_genemetrics_file(file_path: Path):
+    """Parse the genemetrics output file and return a list of log2(FC) values"""
+    logging.info(f"Parsing genemetrics file {str(file_path)}")
+    log2_values = []
+    with file_path.open() as f:
+        next(f)  # Skip the header line
+        for line in f:
+            parts = line.strip().split("\t")
+            log2_value = float(parts[4])
+            log2_values.append(log2_value)
+
+    logging.debug(f"Log2(FC) values from {str(file_path)}: {log2_values}")
+    return log2_values
