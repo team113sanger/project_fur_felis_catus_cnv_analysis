@@ -4,6 +4,7 @@ import json
 import pandas as pd
 from collections import defaultdict
 import re
+from tempfile import TemporaryDirectory
 
 from tests.mocks.mock_files import get_example_sample_metadata_xlsx
 from fur_cnvkit.utils.fur_utils import (
@@ -17,6 +18,7 @@ from fur_cnvkit.utils.fur_utils import (
     split_file_list_by_sample_sex,
     get_tumour_normal_status,
     categorise_files_by_tumour_normal_status,
+    get_sample_study,
 )
 
 
@@ -428,3 +430,29 @@ def test_categorise_files_by_tumour_normal_status():
 
     # Cleanup
     temp_metadata_file.unlink()
+
+
+def test_get_sample_study():
+    # Create a temporary directory for the test Excel file
+    with TemporaryDirectory() as temp_dir:
+        temp_file = Path(temp_dir) / "sample_metadata.xlsx"
+
+        # Create a sample Excel file with multiple sheets
+        with pd.ExcelWriter(temp_file) as writer:
+            df1 = pd.DataFrame(
+                {"Sanger DNA ID": ["S1", "S2"], "Other Info": ["Info1", "Info2"]}
+            )
+            df2 = pd.DataFrame(
+                {"Sanger DNA ID": ["S3", "S4"], "Other Info": ["Info3", "Info4"]}
+            )
+
+            df1.to_excel(writer, index=False, sheet_name="Study1")
+            df2.to_excel(writer, index=False, sheet_name="Study2")
+
+        # Test cases
+        assert get_sample_study(temp_file, "S1") == "Study1"
+        assert get_sample_study(temp_file, "S3") == "Study2"
+
+        # Test case for a missing sample ID
+        with pytest.raises(ValueError, match="Sample ID 'S5' not found in any sheet."):
+            get_sample_study(temp_file, "S5")
