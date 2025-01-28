@@ -116,7 +116,7 @@ def main():
                     f"Generating target coverage for {sample_name} "
                     f" -> {sample_target_coverage_file}"
                 )
-                run_cnvkit_coverage(sample_bam, targets_bed, sex_outdir)
+                run_cnvkit_coverage(sample_bam, targets_bed, coverage_file_dir)
 
             # Check if the antitarget coverage file exists
             if sample_antitarget_coverage_file.exists():
@@ -129,7 +129,7 @@ def main():
                     f"Generating antitarget coverage for {sample_name} "
                     f" -> {sample_antitarget_coverage_file}"
                 )
-                run_cnvkit_coverage(sample_bam, antitargets_bed, sex_outdir)
+                run_cnvkit_coverage(sample_bam, antitargets_bed, coverage_file_dir)
 
             # Regardless of whether the files existed or were newly created,
             # append them to the coverage file list.
