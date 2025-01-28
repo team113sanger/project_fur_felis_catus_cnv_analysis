@@ -6,6 +6,8 @@ import re
 
 import pytest
 
+from fur_cnvkit.utils import cnvkit_utils
+
 # CONSTANTS
 
 
@@ -121,3 +123,41 @@ def test_cnvkit_runs__target(feline_baitset: pathlib.Path, tmp_path: pathlib.Pat
     assert output_file.exists()
     actual_first_line = output_file.read_text().strip().split("\n")[0]
     assert actual_first_line == expected_first_line
+
+
+def test_is_R_installed():
+    # Given
+    should_exist = True
+    programs = ["R", "Rscript"]
+
+    # When
+    is_installed = all([bool(shutil.which(program)) for program in programs])
+
+    # Then
+    assert is_installed == should_exist
+
+
+def test_is_DNACopy_a_findable_R_package():
+    # Given
+    package = "DNAcopy"
+    should_exist = True
+
+    # When
+    actually_exists = cnvkit_utils.is_R_package_installed(package)
+
+    # Then
+    err_msg = f"The R pacakge {package!r} can not be found. Is it installed? Are the paths correct?"
+    assert actually_exists == should_exist, err_msg
+
+
+def test_is_ComplexHeatmap_a_findable_R_package():
+    # Given
+    package = "ComplexHeatmap"
+    should_exist = True
+
+    # When
+    actually_exists = cnvkit_utils.is_R_package_installed(package)
+
+    # Then
+    err_msg = f"The R pacakge {package!r} can not be found. Is it installed? Are the paths correct?"
+    assert actually_exists == should_exist, err_msg
