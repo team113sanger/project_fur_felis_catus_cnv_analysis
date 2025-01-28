@@ -3,6 +3,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import typing as t
+import os
 
 from fur_cnvkit.utils.file_format_checker import is_bam, is_bed, is_fasta
 
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 # Helper functions
-def run_command(command: str) -> None:
+def run_command(command: str, env: t.Optional[dict[str, str]] = None) -> None:
     """Run a given command using subprocess, including logging statements and exception handling.
 
     Args:
@@ -18,13 +19,15 @@ def run_command(command: str) -> None:
     """
     logger.debug(f"Executing command: {command}")
     try:
-        result = execute_command(command)
+        result = execute_command(command, env)
         log_success(command, result)
     except subprocess.CalledProcessError as e:
         log_error(command, e)
 
 
-def execute_command(command: str) -> subprocess.CompletedProcess:
+def execute_command(
+    command: str, env: t.Optional[dict[str, str]] = None
+) -> subprocess.CompletedProcess:
     """Execute a command using subprocess and return the result.
 
     Args:
@@ -36,6 +39,8 @@ def execute_command(command: str) -> subprocess.CompletedProcess:
     Raises:
         subprocess.CalledProcessError: If the command fails.
     """
+    if env is None:
+        env = os.environ.copy()
     command_list = shlex.split(command)
     return subprocess.run(
         command_list,
@@ -43,6 +48,7 @@ def execute_command(command: str) -> subprocess.CompletedProcess:
         stderr=subprocess.PIPE,
         text=True,
         check=True,
+        env=env,
     )
 
 
@@ -121,7 +127,7 @@ def run_cnvkit_autobin(
     access_bed: Path,
     refflat_file: Path,
     outdir: Path,
-) -> dict[Path]:
+) -> t.Dict[str, Path]:
     """Run cnvkit.py autobin to produce target and antitarget BED files
 
     Args:
@@ -321,21 +327,49 @@ def run_cnvkit_batch(
     Returns:
     cnvkit_batch_outdir (Path): Path to the output directory containing the CNVKit batch results
     """
+    # Guards & hand-holding of cnvkit.py's R dependencies are necessary (as of
+    # cnvkit v0.9.10) because cnvkit.py's usage of Rscript. Rscript is invoked
+    # with the --no-environ which strips some of the default paths that R
+    # inspects for package installations.
+    #
+    # While we cannot guess how are user's have installed R packages to support CNVkit,
+    # we can dyanmically set an R_LIBS_USER (if not already set) to prevent package
+    # installation issues.
+    is_package_installed = is_R_package_installed("DNAcopy")
+    if not is_package_installed:
+        logger.error("DNAcopy package is not installed. Please install the package.")
+        raise ValueError(
+            "DNAcopy package is not installed. Please install the package."
+        )
+    logger.info("DNAcopy package is installed.")
+
+    env = os.environ.copy()
+    is_r_libs_user_set = bool(env.get("R_LIBS_USER", None))
+    if not is_r_libs_user_set:
+        r_libs = get_concatenated_libPaths_used_by_R()
+        msg = (
+            "R_LIBS_USER is not an environment variable. "
+            f"Setting R_LIBS_USER to the concatenated library paths used by R: {r_libs}"
+        )
+        env["R_LIBS_USER"] = r_libs
+        logger.info(msg)
+
     # Construct a string containing the tumour BAM file paths to pass to cnvkit.py batch
     tumour_bams_as_string = convert_file_list_to_string(tumour_bams)
-    cnvkit_batch_cmd = f"cnvkit.py batch {tumour_bams_as_string} -m hybrid --drop-low-coverage --reference {str(copy_number_reference_file)} --output-dir {str(outdir)}"
+    cnvkit_batch_cmd = (
+        f"cnvkit.py batch {tumour_bams_as_string} "
+        "-m hybrid "
+        "--drop-low-coverage "
+        f"--reference {str(copy_number_reference_file)} "
+        f"--output-dir {str(outdir)}"
+    )
 
     # If dealing with male samples, specify that we are using a male reference
     if sex == "male":
         cnvkit_batch_cmd += " --male-reference"
 
-    cmd = """Rscript -e 'if (!require("DNAcopy", quietly = TRUE)) stop("DNAcopy package is not installed.")'"""
-
-    run_command(cmd)
-
     # Run cnvkit.py batch command
-    print(f"{cnvkit_batch_cmd=}")
-    run_command(cnvkit_batch_cmd)
+    run_command(cnvkit_batch_cmd, env=env)
 
     return outdir
 
@@ -565,3 +599,12 @@ def get_libPaths_used_by_R() -> t.List[str]:
     result = execute_command(cmd)
     libPaths = result.stdout.strip().split("\n")
     return libPaths
+
+
+def get_concatenated_libPaths_used_by_R() -> str:
+    """Get the concatenated library paths used by R.
+
+    Returns:
+        str: A string of concatenated library paths used by R.
+    """
+    return ":".join(get_libPaths_used_by_R())
