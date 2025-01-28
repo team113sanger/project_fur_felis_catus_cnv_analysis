@@ -41,6 +41,13 @@ def parse_arguments():
         help="Path to exclude file containing samples to remove from final analyses",
     )
     parser.add_argument(
+        "-u",
+        metavar="UNPLACED_CONTIGS",
+        type=str,
+        nargs="*",
+        help="Prefixes of unplaced contigs in the reference genome FASTA file. Please provide separated by spaces.",
+    )
+    parser.add_argument(
         "-f",
         metavar="FASTA",
         type=Path,
@@ -90,6 +97,7 @@ def parse_arguments():
 def generate_parameter_file(
     bam_files: t.List[Path],
     reference_fasta: Path,
+    unplaced_contig_prefixes: t.List[str],
     baitset_bed: Path,
     refflat_file: Path,
     sample_metadata_xlsx: Path,
@@ -114,6 +122,7 @@ def generate_parameter_file(
         "tumour_bams": tumour_bams,
         "normal_bams": normal_bams,
         "reference_fasta": str(reference_fasta),
+        "unplaced_contig_prefixes": unplaced_contig_prefixes,
         "baitset_bed": str(baitset_bed),
         "refflat_file": str(refflat_file),
         "sample_metadata_xlsx": str(sample_metadata_xlsx),
@@ -151,6 +160,7 @@ def main():
         reference_fasta = args.f
     else:
         raise ValueError(f"{str(args.f)} is not a valid FASTA file.")
+    unplaced_contig_prefixes = args.u
     if is_bed(args.t):
         baitset_bed = args.t
     else:
@@ -192,6 +202,7 @@ def main():
     generate_parameter_file(
         filtered_bams,
         reference_fasta,
+        unplaced_contig_prefixes,
         baitset_bed,
         refflat_file,
         sample_metadata_xlsx,
