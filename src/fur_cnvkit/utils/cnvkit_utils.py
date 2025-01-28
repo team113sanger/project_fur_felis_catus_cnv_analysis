@@ -535,3 +535,33 @@ def filter_unplaced_contigs_from_cnvkit_output_file(
     logger.info(
         f"Unplaced contigs removed from {str(cnvkit_output_file)}. Filtered {len(lines) - len(filtered_lines)} lines. Output saved to {str(cnvkit_output_file)}"
     )
+
+
+def is_R_package_installed(package_name: str) -> bool:
+    """Check if an R package is installed.
+
+    Args:
+        package_name (str): The name of the R package to check.
+
+    Returns:
+        bool: True if the package is installed, False otherwise.
+    """
+    cmd = f'Rscript -e \'if (!require("{package_name}", quietly = TRUE)) stop("{package_name} package is not installed.")\''
+    try:
+        execute_command(cmd)
+        result = True
+    except subprocess.CalledProcessError:
+        result = False
+    return result
+
+
+def get_libPaths_used_by_R() -> t.List[str]:
+    """Get the library paths used by R.
+
+    Returns:
+        List[str]: A list of library paths used by R.
+    """
+    cmd = "Rscript -e 'cat(.libPaths(), sep = \"\\n\")'"
+    result = execute_command(cmd)
+    libPaths = result.stdout.strip().split("\n")
+    return libPaths

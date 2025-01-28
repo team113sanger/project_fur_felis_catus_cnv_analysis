@@ -1,11 +1,15 @@
+from pathlib import Path
+import shutil
+
 import pytest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
+
 from fur_cnvkit.utils.cnvkit_utils import (
     run_command,
     run_cnvkit_access,
     run_cnvkit_autobin,
 )
+from fur_cnvkit.utils import cnvkit_utils
 
 
 # Tests for run_cnvkit_access
@@ -67,3 +71,40 @@ def test_run_cnvkit_autobin(
     assert target_bed_dict["target"] == expected_target_bed_path
     assert target_bed_dict["antitarget"] == expected_antitarget_bed_path
     mock_run_command.assert_called_once_with(expected_cmd)
+
+
+@pytest.mark.parametrize(
+    "package, should_exist",
+    [
+        # Valid R stdlib-packages
+        pytest.param("stats", True, id="R-stdlib-stats"),
+        pytest.param("utils", True, id="R-stdlib-utils"),
+        pytest.param("grDevices", True, id="R-stdlib-grDevices"),
+        pytest.param("graphics", True, id="R-stdlib-graphics"),
+        pytest.param("datasets", True, id="R-stdlib-datasets"),
+        pytest.param("methods", True, id="R-stdlib-methods"),
+        pytest.param("base", True, id="R-stdlib-base"),
+        # Invalid R packages
+        pytest.param("non_existent_package", False, id="invalid#non_existent_package"),
+    ],
+)
+def test_is_R_package_installed(package: str, should_exist: bool):
+    # When
+    actually_exists = cnvkit_utils.is_R_package_installed(package)
+
+    # Then
+    assert actually_exists == should_exist
+
+
+@pytest.mark.xfailif(
+    not shutil.which("Rscript"),
+    reason="Rscript not found in PATH, failing test",
+)
+def test_get_libPaths_used_by_R():
+    # When
+    libPaths = cnvkit_utils.get_libPaths_used_by_R()
+
+    # Then
+    assert isinstance(libPaths, list)
+    assert all([Path(p).exists() for p in libPaths])
+    assert len(libPaths) > 0, "No R library paths found, 1 expected at least"
