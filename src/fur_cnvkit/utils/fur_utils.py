@@ -52,47 +52,66 @@ def get_sample_specific_files(
 # -----------------------------------------------
 # Functions for processing the parameter file
 # -----------------------------------------------
-def extract_metadata_files_from_parameter_json(
-    parameter_json: Path,
-) -> t.Dict[str, str]:
-    """Extract all metadata file paths from the parameter JSON and return as a dictionary"""
-
-    logging.info(f"Extracting metadata file paths from {str(parameter_json)} ...")
+def load_metadata(parameter_json: Path) -> t.Dict[str, t.Any]:
+    """Load JSON metadata from the given file."""
+    logging.info(f"Loading metadata from {str(parameter_json)} ...")
     with open(parameter_json, "r") as json_file:
-        metadata = json.load(json_file)
+        return json.load(json_file)
 
-    # Define the expected keys from the parameter JSON
-    expected_keys = (
-        "all_bams",
-        "tumour_bams",
-        "normal_bams",
-        "reference_fasta",
-        "baitset_bed",
-        "refflat_file",
-        "sample_metadata_xlsx",
-        "targets_bed",
-        "antitargets_bed",
-    )
 
-    # Check that the expected keys are present
+def validate_metadata_keys(
+    metadata: t.Dict[str, t.Any], expected_keys: t.Tuple[str, ...], parameter_json: Path
+):
+    """Validate that the expected keys are present in the metadata."""
     missing_keys = tuple(key for key in expected_keys if key not in metadata)
-
     if missing_keys:
         raise KeyError(
             f"The following keys are missing in {str(parameter_json)}: {', '.join(missing_keys)}. Please check input data."
         )
 
-    # Convert file paths to Path objects
+
+def convert_paths(
+    metadata: t.Dict[str, t.Any], exclude_keys: t.Set[str]
+) -> t.Dict[str, t.Any]:
+    """Convert string file paths to Path objects, excluding specified keys."""
     metadata_with_paths = {}
     for key, value in metadata.items():
-        if isinstance(value, str):
-            metadata_with_paths[key] = Path(value)
-        elif isinstance(value, list):
-            metadata_with_paths[key] = [Path(v) for v in value]
+        if key not in exclude_keys:
+            if isinstance(value, str):
+                metadata_with_paths[key] = Path(value)
+            elif isinstance(value, list) and all(isinstance(v, str) for v in value):
+                metadata_with_paths[key] = [Path(v) for v in value]
+            else:
+                metadata_with_paths[
+                    key
+                ] = value  # Keep as-is for non-path-related values
         else:
-            metadata_with_paths[key] = value  # Keep as-is for non-path-related values
-
+            metadata_with_paths[key] = value  # Exclude from Path conversion
     return metadata_with_paths
+
+
+def extract_metadata_files_from_parameter_json(
+    parameter_json: Path,
+) -> t.Dict[str, t.Any]:
+    """Extract all metadata file paths from the parameter JSON and return as a dictionary."""
+    expected_keys = (
+        "all_bams",
+        "tumour_bams",
+        "normal_bams",
+        "reference_fasta",
+        "unplaced_contig_prefixes",
+        "baitset_bed",
+        "refflat_file",
+        "sample_metadata_xlsx",
+        "access_bed",
+        "targets_bed",
+        "antitargets_bed",
+    )
+    exclude_keys = {"unplaced_contig_prefixes"}
+
+    metadata = load_metadata(parameter_json)
+    validate_metadata_keys(metadata, expected_keys, parameter_json)
+    return convert_paths(metadata, exclude_keys)
 
 
 # -----------------------------------------------
@@ -256,6 +275,21 @@ def determine_sample_sexes(
 def split_file_list_by_sample_sex(
     file_list: t.List[Path], sample_metadata_xlsx: Path
 ) -> t.DefaultDict[str, t.List[Path]]:
+    """
+    Splits a list of file paths by the sex of the samples they correspond to.
+    This function takes a list of file paths and a metadata Excel file that contains
+    information about the sex of each sample. It determines the sex of each sample
+    and groups the file paths by sex.
+    Args:
+        file_list (t.List[Path]): A list of file paths to be split by sample sex.
+        sample_metadata_xlsx (Path): Path to the Excel file containing sample metadata,
+                                     including the sex of each sample.
+    Returns:
+        t.DefaultDict[str, t.List[Path]]: A dictionary where the keys are the sexes
+                                          ('male', 'female', etc.) and the values are
+                                          lists of file paths corresponding to samples
+                                          of that sex.
+    """
     # Determine the sexes of all samples in the file list
     sample_sex_dict = determine_sample_sexes(file_list, sample_metadata_xlsx)
 
@@ -278,6 +312,20 @@ def split_file_list_by_sample_sex(
 def map_sample_ids_to_study_ids(
     sample_ids: set, sample_metadata_xlsx: Path
 ) -> t.Dict[str, str]:
+    """
+    Map sample IDs to their corresponding study IDs based on the metadata Excel file.
+
+    Args:
+        sample_ids (set): A set of sample IDs to map to study IDs.
+        sample_metadata_xlsx (Path): Path to the metadata Excel file.
+
+    Returns:
+        Dict[str, str]: A dictionary mapping each sample ID to its corresponding study ID.
+        Keys are study IDs and values are lists of sample IDs.
+
+    Raises:
+        ValueError: If a sample ID is not found in the metadata Excel file.
+    """
     sample_study_dict = defaultdict(list)
 
     for sample_id in sample_ids:
