@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+import shlex
 import subprocess
 import typing as t
 
@@ -35,7 +36,7 @@ def execute_command(command: str) -> subprocess.CompletedProcess:
     Raises:
         subprocess.CalledProcessError: If the command fails.
     """
-    command_list = command.split()
+    command_list = shlex.split(command)
     return subprocess.run(
         command_list,
         stdout=subprocess.PIPE,
@@ -304,6 +305,41 @@ def run_cnvkit_genemetrics(
     return output_file_path
 
 
+def run_cnvkit_batch(
+    tumour_bams: t.List[Path],
+    copy_number_reference_file: Path,
+    outdir: Path,
+    sex: t.Literal["male", "female"],
+) -> Path:
+    """
+    Run the CNVkit batch command on a list of tumour BAM files.
+
+    Args:
+        tumour_bams (List[Path]): List of tumour BAM files.
+        copy_number_reference_file (Path): Path to the copy number reference
+
+    Returns:
+    cnvkit_batch_outdir (Path): Path to the output directory containing the CNVKit batch results
+    """
+    # Construct a string containing the tumour BAM file paths to pass to cnvkit.py batch
+    tumour_bams_as_string = convert_file_list_to_string(tumour_bams)
+    cnvkit_batch_cmd = f"cnvkit.py batch {tumour_bams_as_string} -m hybrid --drop-low-coverage --reference {str(copy_number_reference_file)} --output-dir {str(outdir)}"
+
+    # If dealing with male samples, specify that we are using a male reference
+    if sex == "male":
+        cnvkit_batch_cmd += " --male-reference"
+
+    cmd = """Rscript -e 'if (!require("DNAcopy", quietly = TRUE)) stop("DNAcopy package is not installed.")'"""
+
+    run_command(cmd)
+
+    # Run cnvkit.py batch command
+    print(f"{cnvkit_batch_cmd=}")
+    run_command(cnvkit_batch_cmd)
+
+    return outdir
+
+
 # CNVKit file validation
 def file_exists(file: Path) -> bool:
     """
@@ -473,3 +509,29 @@ def parse_genemetrics_file(file_path: Path):
 
     logging.debug(f"Log2(FC) values from {str(file_path)}: {log2_values}")
     return log2_values
+
+
+# CNVKit file filtering
+def filter_unplaced_contigs_from_cnvkit_output_file(
+    cnvkit_output_file: Path, unplaced_contigs: t.List[str]
+):
+    logger.info(f"Removing unplaced contigs from {str(cnvkit_output_file)}...")
+
+    # Read the CNVKit output file
+    with cnvkit_output_file.open() as f:
+        lines = f.readlines()
+
+    # Filter out lines with unplaced contigs
+    filtered_lines = [
+        line
+        for line in lines
+        if not any(line.startswith(contig) for contig in unplaced_contigs)
+    ]
+
+    # Write the filtered lines back to the CNVKit output file
+    with cnvkit_output_file.open("w") as f:
+        f.writelines(filtered_lines)
+
+    logger.info(
+        f"Unplaced contigs removed from {str(cnvkit_output_file)}. Filtered {len(lines) - len(filtered_lines)} lines. Output saved to {str(cnvkit_output_file)}"
+    )
