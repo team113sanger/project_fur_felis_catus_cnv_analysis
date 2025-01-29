@@ -10,7 +10,10 @@ from tests.mocks.mock_files import get_example_sample_metadata_xlsx
 from fur_cnvkit.utils.fur_utils import (
     get_sample_id_from_file_path,
     get_sample_ids_for_file_list,
-    extract_metadata_files_from_parameter_json,
+    get_sample_specific_files,
+    validate_metadata_keys,
+    map_sample_ids_to_study_ids,
+    convert_paths,
     extract_sample_ids_from_exclude_file,
     filter_files_by_exclude_samples,
     remove_unwanted_sample_files,
@@ -50,41 +53,263 @@ def test_get_sample_ids_for_file_list():
     assert get_sample_ids_for_file_list(files) == expected
 
 
-# def test_extract_metadata_files_from_config_json(tmp_path):
-#     config = {
-#         "all_bams": ["/path/to/sample1.bam", "/path/to/sample2.bam"],
-#         "tumour_bams": ["/path/to/sample1.bam"],
-#         "normal_bams": ["/path/to/sample2.bam"],
-#         "reference_fasta": "/path/to/reference.fasta",
-#         "baitset_bed": "/path/to/baitset.bed",
-#         "refflat_file": "/path/to/refflat.txt",
-#         "sample_metadata_xlsx": "/path/to/metadata.xlsx",
-#         "targets_bed": "/path/to/targets.bed",
-#         "antitargets_bed": "/path/to/antitargets.bed",
-#     }
+def test_get_sample_specific_files_when_suffixes_is_none_and_files_found():
+    """
+    If suffixes is None, we return all files containing 'sample1' in their filenames.
+    """
+    files = [
+        Path("/path/to/sample1.bam"),
+        Path("/path/to/sample1.txt"),
+        Path("/path/to/another_sample1.fastq"),
+        Path("/path/to/unrelated_file.txt"),
+    ]
+    sample = "sample1"
 
-#     config_file = tmp_path / "config.json"
-#     with open(config_file, "w") as f:
-#         json.dump(config, f)
+    result = get_sample_specific_files(files, sample, suffixes=None)
+    expected = [
+        Path("/path/to/sample1.bam"),
+        Path("/path/to/sample1.txt"),
+        Path("/path/to/another_sample1.fastq"),
+    ]
+    assert sorted(result) == sorted(expected)
 
-#     metadata = extract_metadata_files_from_config_json(config_file)
-#     assert metadata == config
+
+def test_get_sample_specific_files_when_suffixes_is_none_and_no_files_found():
+    """
+    If suffixes is None but no file contains the sample string,
+    we expect a ValueError.
+    """
+    files = [
+        Path("/path/to/foo.bam"),
+        Path("/path/to/bar.txt"),
+    ]
+    sample = "sample1"
+
+    with pytest.raises(ValueError, match="No files found containing sample"):
+        get_sample_specific_files(files, sample, suffixes=None)
 
 
-def test_extract_metadata_files_from_parameter_json_missing_keys(tmp_path):
-    parameters = {
-        "reference_fasta": "/path/to/reference.fasta",
-        # Missing "baitset_bed" and others
+def test_get_sample_specific_files_with_single_suffix_all_good():
+    """
+    If suffixes has a single item, we need at least one file that ends
+    with that suffix (and contains the sample name).
+    """
+    files = [
+        Path("/path/to/sample1.bam"),
+        Path("/path/to/sample1.txt"),
+        Path("/path/to/sample2.bam"),
+    ]
+    sample = "sample1"
+    suffixes = [".bam"]
+
+    # Expect to find sample1.bam, which ends with .bam and contains "sample1"
+    result = get_sample_specific_files(files, sample, suffixes=suffixes)
+    expected = [Path("/path/to/sample1.bam")]
+    assert result == expected
+
+
+def test_get_sample_specific_files_with_single_suffix_none_found():
+    """
+    If we can't find any file for the single suffix, we raise ValueError.
+    """
+    files = [
+        Path("/path/to/sample1.txt"),
+        Path("/path/to/sample1.fastq"),
+    ]
+    sample = "sample1"
+    suffixes = [".bam"]
+
+    # None of these files end with .bam, so we expect an error.
+    with pytest.raises(
+        ValueError,
+        match="No files found containing sample 'sample1' with suffix '.bam'",
+    ):
+        get_sample_specific_files(files, sample, suffixes=suffixes)
+
+
+def test_get_sample_specific_files_with_multiple_suffixes_success():
+    """
+    With multiple suffixes, we need at least one file for each suffix
+    that contains the sample in its filename.
+    """
+    files = [
+        Path("/path/to/sample1.bam"),
+        Path("/path/to/sample1.txt"),
+        Path("/path/to/sample1.fastq"),  # Not in suffixes, but that’s okay
+        Path("/path/to/another_sample1.txt"),
+    ]
+    sample = "sample1"
+    suffixes = [".bam", ".txt"]
+
+    # We have at least one .bam (sample1.bam)
+    # and at least one .txt (sample1.txt, another_sample1.txt).
+    # The function returns the union of those matches.
+    result = get_sample_specific_files(files, sample, suffixes=suffixes)
+    expected = [
+        Path("/path/to/sample1.bam"),
+        Path("/path/to/sample1.txt"),
+        Path("/path/to/another_sample1.txt"),
+    ]
+    assert sorted(result) == sorted(expected)
+
+
+def test_get_sample_specific_files_with_multiple_suffixes_missing_one():
+    """
+    If any one suffix fails to match any file, we should raise a ValueError immediately.
+    """
+    files = [
+        Path("/path/to/sample1.bam"),  # .bam is there
+        Path("/path/to/sample1.fastq"),
+        Path("/path/to/sample2.txt"),
+    ]
+    sample = "sample1"
+    suffixes = [".bam", ".txt"]
+
+    # We do have sample1.bam (good for .bam),
+    # but there's NO file for sample1 that ends with .txt,
+    # so we expect ValueError.
+    with pytest.raises(
+        ValueError,
+        match="No files found containing sample 'sample1' with suffix '.txt'",
+    ):
+        get_sample_specific_files(files, sample, suffixes=suffixes)
+
+
+def test_validate_metadata_keys_success(tmp_path):
+    """
+    Test validate_metadata_keys for a successful scenario when no keys are missing.
+    """
+    metadata = {
+        "all_bams": ["sample1.bam", "sample2.bam"],
+        "tumour_bams": ["sample1.bam"],
+        "normal_bams": ["sample2.bam"],
+        "reference_fasta": "ref.fa",
+        "unplaced_contig_prefixes": ["foo"],
+        "baitset_bed": "baits.bed",
+        "refflat_file": "refflat.txt",
+        "sample_metadata_xlsx": "metadata.xlsx",
+        "access_bed": "access.bed",
+        "targets_bed": "targets.bed",
+        "antitargets_bed": "antitargets.bed",
     }
+    expected_keys = (
+        "all_bams",
+        "tumour_bams",
+        "normal_bams",
+        "reference_fasta",
+        "unplaced_contig_prefixes",
+        "baitset_bed",
+        "refflat_file",
+        "sample_metadata_xlsx",
+        "access_bed",
+        "targets_bed",
+        "antitargets_bed",
+    )
 
-    parameter_file = tmp_path / "config.json"
-    with open(parameter_file, "w") as f:
-        json.dump(parameters, f)
+    # Should not raise an error
+    try:
+        validate_metadata_keys(metadata, expected_keys, tmp_path / "param.json")
+    except KeyError:
+        pytest.fail("validate_metadata_keys raised KeyError unexpectedly.")
 
+
+def test_validate_metadata_keys_missing(tmp_path):
+    """
+    Test validate_metadata_keys when some keys are missing.
+    """
+    metadata = {
+        "all_bams": ["sample1.bam", "sample2.bam"],
+        # missing tumour_bams, normal_bams, etc.
+        "reference_fasta": "ref.fa",
+    }
+    expected_keys = (
+        "all_bams",
+        "tumour_bams",
+        "normal_bams",
+        "reference_fasta",
+    )
     with pytest.raises(KeyError) as excinfo:
-        extract_metadata_files_from_parameter_json(parameter_file)
+        validate_metadata_keys(metadata, expected_keys, tmp_path / "param.json")
 
-    assert "baitset_bed" in str(excinfo.value)
+    # Check if the error mentions missing keys
+    assert "tumour_bams" in str(excinfo.value)
+    assert "normal_bams" in str(excinfo.value)
+
+
+def test_convert_paths(tmp_path):
+    """
+    Test that convert_paths correctly converts string paths
+    to Path objects for all but the excluded keys.
+    """
+    metadata = {
+        "path_1": str(tmp_path / "file1.txt"),
+        "path_2": [str(tmp_path / "file2.txt"), str(tmp_path / "file3.txt")],
+        "some_value": 123,
+        "exclude_this": str(tmp_path / "exclude_me.txt"),
+    }
+    exclude_keys = {"exclude_this"}
+
+    converted = convert_paths(metadata, exclude_keys)
+    assert isinstance(converted["path_1"], Path)
+    assert all(isinstance(p, Path) for p in converted["path_2"])
+    # This key should remain unchanged because it's excluded
+    assert isinstance(converted["exclude_this"], str)
+    # Non-path items should remain as they are
+    assert converted["some_value"] == 123
+
+
+def test_map_sample_ids_to_study_ids_success():
+    """
+    Test map_sample_ids_to_study_ids with valid sample IDs in the metadata.
+    """
+    # Create a mock DataFrame with two sheets
+    with TemporaryDirectory() as temp_dir:
+        metadata_file = Path(temp_dir) / "metadata.xlsx"
+        with pd.ExcelWriter(metadata_file) as writer:
+            df_study1 = pd.DataFrame(
+                {
+                    "Sanger DNA ID": ["S1", "S2"],
+                    "Some Column": ["val1", "val2"],
+                }
+            )
+            df_study2 = pd.DataFrame(
+                {
+                    "Sanger DNA ID": ["S3"],
+                    "Some Column": ["val3"],
+                }
+            )
+            df_study1.to_excel(writer, sheet_name="Study1", index=False)
+            df_study2.to_excel(writer, sheet_name="Study2", index=False)
+
+        sample_ids = {"S1", "S2", "S3"}
+        result = map_sample_ids_to_study_ids(sample_ids, metadata_file)
+
+        # We expect each study to have a list of the sample IDs that appear in it
+        expected = {
+            "Study1": ["S1", "S2"],
+            "Study2": ["S3"],
+        }
+        # Order of items in the lists might differ, so we'll compare sorted lists
+        for study in result:
+            assert sorted(result[study]) == sorted(expected[study])
+
+
+def test_map_sample_ids_to_study_ids_missing_sample():
+    """
+    Test map_sample_ids_to_study_ids with a sample ID that does not appear
+    in any sheet, which should raise ValueError from get_sample_study.
+    """
+    with TemporaryDirectory() as temp_dir:
+        metadata_file = Path(temp_dir) / "metadata.xlsx"
+        with pd.ExcelWriter(metadata_file) as writer:
+            df_study1 = pd.DataFrame({"Sanger DNA ID": ["S1"], "Col": ["val1"]})
+            df_study1.to_excel(writer, sheet_name="Study1", index=False)
+
+        # "S2" won't be found
+        sample_ids = {"S1", "S2"}
+
+        with pytest.raises(ValueError, match="Sample ID 'S2' not found in any sheet."):
+            map_sample_ids_to_study_ids(sample_ids, metadata_file)
 
 
 def test_extract_sample_ids_from_exclude_file(tmp_path):
