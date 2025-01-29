@@ -33,20 +33,57 @@ def get_sample_specific_files(
     files: t.List[Path], sample: str, suffixes: t.Optional[t.List[str]] = None
 ) -> t.List[Path]:
     """
-    Get the files corresponding to a particular sample. If `suffixes` are provided,
-    only files whose suffix is in that list are returned. Otherwise, all files
-    containing `sample` in their filename are returned.
+    Get the files corresponding to a particular sample.
+    - If `suffixes` is None, return all files containing `sample` in their filename.
+    - If `suffixes` is a list, then for each suffix in that list, we must find at
+      least one file that contains `sample` in its name and ends with that suffix.
+      If any suffix doesn't match at least one file, raise a ValueError.
+
+    Args:
+        files (List[Path]): List of file paths to filter.
+        sample (str): A string (e.g. sample ID) to look for in the filename.
+        suffixes (Optional[List[str]]): If provided, we attempt to find files
+            for each suffix in this list.
+
+    Returns:
+        List[Path]: A list of *all* matching files (for all suffixes) combined.
+
+    Raises:
+        ValueError: If no files match the sample (when suffixes is None),
+            or if any suffix in `suffixes` has no matching file.
     """
+    suffixes_as_string = ", ".join(suffixes if suffixes is not None else [])
+    file_message = (
+        f"Finding {suffixes_as_string} files" if suffixes_as_string else "Finding files"
+    )
+    logging.info(f"{file_message} corresponding to sample {sample} ...")
+
     if suffixes is None:
-        suffixes = []
+        # Return all files that contain `sample` in their name.
+        matched_files = [f for f in files if sample in f.name]
+        if not matched_files:
+            raise ValueError(
+                f"No files found containing sample '{sample}' with no suffix filtering."
+            )
+        return matched_files
+    else:
+        # We'll gather matches for each suffix separately, ensuring each suffix is found at least once.
+        all_matched_files = []
 
-    sample_files = [
-        file
-        for file in files
-        if (sample in file.name and any(file.name.endswith(suf) for suf in suffixes))
-    ]
+        for suf in suffixes:
+            # Collect files matching this particular suffix
+            matched_for_suf = [
+                f for f in files if sample in f.name and f.name.endswith(suf)
+            ]
+            if not matched_for_suf:
+                # If *no* files for this suffix, raise an error immediately.
+                raise ValueError(
+                    f"No files found containing sample '{sample}' with suffix '{suf}'."
+                )
+            # Add these matches to the global list (we can deduplicate later if needed)
+            all_matched_files.extend(matched_for_suf)
 
-    return sample_files
+        return all_matched_files
 
 
 # -----------------------------------------------
