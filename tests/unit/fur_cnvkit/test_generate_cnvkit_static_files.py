@@ -20,6 +20,8 @@ def test_generate_parameter_file():
         sample_metadata_xlsx = tempdir_path / "sample_metadata.xlsx"
         targets_bed = tempdir_path / "targets.bed"
         antitargets_bed = tempdir_path / "antitargets.bed"
+        access_bed = tempdir_path / "access.bed"
+        unplaced_contig_prefixes = ["chrUn", "chrAlt"]
         parameter_file_name = "test"
         outdir = tempdir_path
 
@@ -31,6 +33,7 @@ def test_generate_parameter_file():
             sample_metadata_xlsx,
             targets_bed,
             antitargets_bed,
+            access_bed,
         ]:
             file.touch()
 
@@ -53,9 +56,11 @@ def test_generate_parameter_file():
         output_parameter_file = generate_parameter_file(
             bam_files=bam_files,
             reference_fasta=reference_fasta,
+            unplaced_contig_prefixes=unplaced_contig_prefixes,
             baitset_bed=baitset_bed,
             refflat_file=refflat_file,
             sample_metadata_xlsx=sample_metadata_xlsx,
+            access_bed=access_bed,
             targets_bed=targets_bed,
             antitargets_bed=antitargets_bed,
             parameter_file_name=parameter_file_name,
@@ -78,9 +83,11 @@ def test_generate_parameter_file():
             "tumour_bams": [str(tumour_bam)],
             "normal_bams": [str(normal_bam)],
             "reference_fasta": str(reference_fasta),
+            "unplaced_contig_prefixes": unplaced_contig_prefixes,
             "baitset_bed": str(baitset_bed),
             "refflat_file": str(refflat_file),
             "sample_metadata_xlsx": str(sample_metadata_xlsx),
+            "access_bed": str(access_bed),
             "targets_bed": str(targets_bed),
             "antitargets_bed": str(antitargets_bed),
         }
