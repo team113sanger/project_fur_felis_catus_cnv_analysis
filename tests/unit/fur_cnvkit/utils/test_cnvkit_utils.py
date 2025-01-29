@@ -13,7 +13,7 @@ from fur_cnvkit.utils import cnvkit_utils
 
 
 # Tests for run_cnvkit_access
-@patch("utils.cnvkit_utils.run_command")
+@patch("fur_cnvkit.utils.cnvkit_utils.run_command")
 def test_run_cnvkit_access(mock_run_command, feline_reference_fasta: Path):
     # Given
     outdir = Path("/test/outdir")
@@ -34,7 +34,7 @@ def test_run_cnvkit_access(mock_run_command, feline_reference_fasta: Path):
 
 
 # Tests for run_cnvkit_autobin
-@patch("utils.cnvkit_utils.run_command")
+@patch("fur_cnvkit.utils.cnvkit_utils.run_command")
 def test_run_cnvkit_autobin(
     mock_run_command,
     bams: list[Path],

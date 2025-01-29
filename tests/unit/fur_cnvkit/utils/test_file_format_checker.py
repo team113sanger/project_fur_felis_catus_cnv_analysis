@@ -92,7 +92,7 @@ def test_is_bed_error_reading_file(mock_file_path):
 # Tests for validate_bam_files
 @pytest.fixture
 def mock_is_bam():
-    with patch("utils.file_format_checker.is_bam") as mock_is_bam:
+    with patch("fur_cnvkit.utils.file_format_checker.is_bam") as mock_is_bam:
         yield mock_is_bam
 
 
