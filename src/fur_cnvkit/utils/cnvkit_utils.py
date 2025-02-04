@@ -756,10 +756,14 @@ def perform_mode_centring(
             - The path to the mode-centered file.
             - The extracted log2 shift value (None if not found).
     """
+    logger.info(f"Performing mode centring on {str(copy_number_call_file)}")
+
+    # Construct the output file path
     mode_centred_suffix = ".mode_centred" + copy_number_call_file.suffix
     mode_centred_file_name = copy_number_call_file.stem + mode_centred_suffix
     mode_centred_file_path = outdir / mode_centred_file_name
 
+    # Construct mode centring command
     mode_centring_cmd = f"cnvkit.py call -m none {copy_number_call_file} --center mode -o {mode_centred_file_path}"
 
     if skip_file_generation(mode_centred_file_path, validator=is_valid_call_cns_file):
