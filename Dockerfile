@@ -144,10 +144,11 @@ RUN \
     Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')" && \
     Rscript -e "BiocManager::install(version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
     Rscript -e "BiocManager::install('ComplexHeatmap', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo \"Got $(Rscript -e \"packageVersion('ComplexHeatmap')\") instead of ${COMPLEXHEATMAP_VERSION}\" && exit 1) && \
+    Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo "Got $(Rscript -e "packageVersion('ComplexHeatmap')") instead of ${COMPLEXHEATMAP_VERSION}}" && exit 1) && \
     Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo \"Got $(Rscript -e \"packageVersion('DNAcopy')\") instead of ${DNACOPY_VERSION}\" && exit 1) && \
+    Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1) && \
     Rscript -e "install.packages('optparse', repos='https://cloud.r-project.org')"
+
 
 
 # As the non-root user we install pipx and poetry so that they are available in
