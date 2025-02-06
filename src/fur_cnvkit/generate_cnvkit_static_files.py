@@ -94,6 +94,42 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
+    logging.info("Generating baitset genes file ...")
+
+    # Extract a set of baitset genes from the targets BED file
+    with open(targets_bed, "r") as f:
+        baitset_genes = {line.split("\t")[3].strip() for line in f.readlines()}
+
+    # Unpack gene names that have been merged during target BED generation
+    unpacked_genes_set = set()
+
+    for gene_string in baitset_genes:
+        if "," in gene_string:
+            unpacked_genes_set.update(gene_string.split(","))
+        else:
+            unpacked_genes_set.add(gene_string)
+
+    logging.debug(
+        f"Detected {len(unpacked_genes_set)} unique genes : {sorted(unpacked_genes_set)}"
+    )
+
+    # Define output file path
+    baitset_genes_file_name = targets_bed.name.replace(
+        ".target.bed", ".baitset_genes.txt"
+    )
+    baitset_genes_file_path = outdir / baitset_genes_file_name
+
+    # Write the baitset genes to a file
+    with open(baitset_genes_file_path, "w") as f:
+        for gene in sorted(unpacked_genes_set):
+            f.write(gene + "\n")
+
+    logging.info(f"Baitset genes file saved to {str(baitset_genes_file_path)}")
+
+    return baitset_genes_file_path
+
+
 def generate_parameter_file(
     bam_files: t.List[Path],
     reference_fasta: Path,
@@ -104,6 +140,7 @@ def generate_parameter_file(
     access_bed: Path,
     targets_bed: Path,
     antitargets_bed: Path,
+    baitset_genes_file: Path,
     parameter_file_name: str,
     outdir: Path,
 ) -> Path:
@@ -129,6 +166,7 @@ def generate_parameter_file(
         "access_bed": str(access_bed),
         "targets_bed": str(targets_bed),
         "antitargets_bed": str(antitargets_bed),
+        "baitset_genes_file": str(baitset_genes_file),
     }
 
     # Construct output parameter file path
@@ -198,6 +236,9 @@ def main():
         filtered_bams, baitset_bed, access_bed, refflat_file, outdir
     )
 
+    # Generate a baitset genes file using the target BED
+    baitset_genes_file = generate_baitset_genes_file(target_bed_dict["target"], outdir)
+
     # Generate parameter file including newly generated reference files
     generate_parameter_file(
         filtered_bams,
@@ -209,6 +250,7 @@ def main():
         access_bed,
         target_bed_dict["target"],
         target_bed_dict["antitarget"],
+        baitset_genes_file,
         parameter_file_name,
         outdir,
     )
