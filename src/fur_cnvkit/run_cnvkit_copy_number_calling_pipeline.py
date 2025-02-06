@@ -7,6 +7,7 @@ import pandas as pd
 
 from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_parameter_json,
+    get_sample_id_from_file_path,
     get_sample_ids_for_file_list,
     map_sample_ids_to_study_ids,
     split_file_list_by_sample_sex,
@@ -184,6 +185,8 @@ def perform_post_processing(
 
     logging.info(f"Successfully processed sample {sample_id}.")
 
+    return filtered_genemetrics_segment_file
+
 
 def process_sample(
     sample_id: str,
@@ -213,7 +216,7 @@ def process_sample(
         filter_unplaced_contigs_from_cnvkit_output_file(file, unplaced_contigs)
 
     # Perform post-processing steps on this sample
-    perform_post_processing(
+    sample_genemetrics_file = perform_post_processing(
         sample_id=sample_id,
         sample_cnvkit_batch_output_files=sample_files,
         sex=sex,
@@ -222,6 +225,8 @@ def process_sample(
         log2_shift_records=log2_shift_records,
         outdir=batch_outdir,
     )
+
+    return sample_genemetrics_file
 
 
 def process_sex_group(
@@ -253,8 +258,11 @@ def process_sex_group(
     batch_output_files = [Path(f) for f in batch_output_dir.glob("*") if f.is_file()]
     sex_sample_ids = get_sample_ids_for_file_list(sex_tumour_bams)
 
+    # Create a list to store the genemetrics files from these samples
+    sex_genemetrics_files = []
+
     for sample_id in sex_sample_ids:
-        process_sample(
+        sample_genemetrics_file = process_sample(
             sample_id,
             batch_output_files,
             unplaced_contigs,
@@ -264,6 +272,73 @@ def process_sex_group(
             log2_shift_records,
             batch_output_dir,
         )
+        sex_genemetrics_files.append(sample_genemetrics_file)
+
+    return sex_genemetrics_files
+
+
+def generate_genemetrics_study_summary_csv(
+    study_id: str,
+    genemetrics_files: t.List[Path],
+    baitset_genes_file: Path,
+    outdir: Path,
+) -> Path:
+    logging.info(
+        f"Generating study-level genemetrics summary CSV for study {study_id} ..."
+    )
+
+    # Construct output CSV path
+    output_csv_file_name = study_id + ".genemetrics_study_summary.csv"
+    output_csv_file_path = outdir / output_csv_file_name
+
+    # Extract baitset gene symbols from baitset gene file
+    logging.info(f"Extracting baitset gene symbols from {str(baitset_genes_file)} ...")
+    with open(baitset_genes_file, "r") as f:
+        baitset_genes_list = [line.strip() for line in f.readlines()]
+
+    # Collect gene-level log2 data in a list of Series, one per sample
+    sample_series_list = []
+
+    # Set of UCSC labels to skip if they appear as "genes"
+    skip_labels = {"none", "unk", "incmpl", "cmpl"}
+
+    for genemetrics_file in genemetrics_files:
+        sample_id = get_sample_id_from_file_path(genemetrics_file)
+        logging.info(f"Processing file {genemetrics_file} for sample {sample_id} ...")
+
+        # Use pandas to read the genemetrics file
+        df_temp = pd.read_csv(
+            genemetrics_file, sep="\t", usecols=[0, 4]  # gene and log2 columns
+        )
+
+        logging.debug(f"df_temp: {df_temp.head()}")
+
+        # Skip any rows where the gene is in the skip list
+        df_temp = df_temp[~df_temp["gene"].isin(skip_labels)]
+
+        # Convert log2 column to float
+        df_temp["log2"] = pd.to_numeric(df_temp["log2"], errors="coerce")
+
+        # Make 'gene' the index
+        df_temp.set_index("gene", inplace=True)
+
+        # Reindex to ensure we have rows for all baitset_genes
+        df_temp = df_temp.reindex(baitset_genes_list)
+
+        # Create a Series, one per sample
+        s = df_temp["log2"].rename(sample_id)
+
+        logging.debug(f"s: {s}")
+        sample_series_list.append(s)
+
+    # Combine the sample-level Series into a cohort-level DataFrame
+    cohort_df = pd.concat(sample_series_list, axis=1).T  # Samples=rows, Genes=columns
+
+    # Export DataFrame to CSV
+    cohort_df.to_csv(output_csv_file_path)
+    logging.info(f"Cohort summary CSV created at {str(output_csv_file_path)}")
+
+    return cohort_df
 
 
 def process_study(
@@ -274,6 +349,7 @@ def process_study(
     unplaced_contigs: t.List[str],
     male_ref: Path,
     female_ref: Path,
+    baitset_genes_file: Path,
     gain_threshold: float,
     loss_threshold: float,
     outdir: Path,
@@ -291,13 +367,20 @@ def process_study(
         for bam in tumour_bam_list
         if any(sample_id in bam.name for sample_id in sample_ids)
     ]
+
+    # Split the tumour BAMs according to their sex
     tumour_bam_sex_dict = split_file_list_by_sample_sex(
         study_tumour_bams, sample_metadata_xlsx
     )
+
+    # Create a list to store mode-centred log2 shift values
     log2_shift_records: t.List[t.Dict[str, t.Any]] = []
 
+    # Create a list to store genemetrics files for this study
+    study_genemetrics_files: t.List[Path] = []
+
     for sex, sex_tumour_bams in tumour_bam_sex_dict.items():
-        process_sex_group(
+        sex_genemetrics_files = process_sex_group(
             sex,
             sex_tumour_bams,
             study_outdir,
@@ -310,10 +393,41 @@ def process_study(
             log2_shift_records,
         )
 
-    log2_shift_df = pd.DataFrame(log2_shift_records)
+        study_genemetrics_files += sex_genemetrics_files
+
+    # Before writing out the log2 shift values, check if the CSV already exists.
     log2_shift_csv_path = study_outdir / "log2_shift_values.csv"
+    if log2_shift_csv_path.exists():
+        logging.info(
+            f"Found existing log2 shift CSV at {str(log2_shift_csv_path)}. Merging existing values..."
+        )
+        existing_df = pd.read_csv(log2_shift_csv_path)
+        # Create a mapping from sample ID to shift value (skip entries that are NaN)
+        existing_log2_dict = {
+            row["Sample ID"]: row["Log2 Shift Value"]
+            for _, row in existing_df.iterrows()
+            if pd.notnull(row["Log2 Shift Value"])
+        }
+        # Update any new records with a missing (None) shift value from the existing dictionary
+        for record in log2_shift_records:
+            if (
+                record["Log2 Shift Value"] is None
+                and record["Sample ID"] in existing_log2_dict
+            ):
+                record["Log2 Shift Value"] = existing_log2_dict[record["Sample ID"]]
+
+    # Write the log2 shift values to the CSV
+    log2_shift_df = pd.DataFrame(log2_shift_records)
     log2_shift_df.to_csv(log2_shift_csv_path, index=False)
     logging.info(f"Log2 shift values saved to {log2_shift_csv_path}")
+
+    # Create a cohort-level genemetrics summary CSV
+    generate_genemetrics_study_summary_csv(
+        study_id=study_id,
+        genemetrics_files=study_genemetrics_files,
+        baitset_genes_file=baitset_genes_file,
+        outdir=outdir,
+    )
 
 
 def main():
@@ -341,6 +455,7 @@ def main():
     tumour_bam_list = metadata["tumour_bams"]
     sample_metadata_xlsx = metadata["sample_metadata_xlsx"]
     unplaced_contigs = metadata["unplaced_contig_prefixes"]
+    baitset_genes_file = metadata["baitset_genes_file"]
 
     logging.debug(f"Tumour BAMs: {tumour_bam_list}")
     logging.debug(f"Sample metadata: {sample_metadata_xlsx}")
@@ -373,6 +488,7 @@ def main():
             unplaced_contigs,
             male_ref,
             female_ref,
+            baitset_genes_file,
             gain_threshold,
             loss_threshold,
             outdir,
