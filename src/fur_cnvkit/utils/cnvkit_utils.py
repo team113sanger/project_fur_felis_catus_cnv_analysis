@@ -200,26 +200,33 @@ def has_correct_suffix(file: Path, expected_suffix: str) -> bool:
     return True
 
 
-def has_expected_header(file: Path, expected_header: str) -> bool:
+def has_expected_header(file: Path, expected_header: t.Union[str, t.List[str]]) -> bool:
     """
-    Check if the file has the expected header.
+    Check if the file has the expected header or one of the valid headers.
 
     Args:
         file (Path): The file to check.
-        expected_header (str): The expected header line in the file.
+        expected_header (Union[str, List[str]]): The expected header line as a string,
+            or a list of valid header lines.
 
     Returns:
-        bool: True if the file has the expected header, False otherwise.
+        bool: True if the file has one of the expected headers, False otherwise.
     """
     try:
         with file.open() as f:
             actual_header = f.readline().strip()
-        if actual_header == expected_header:
+
+        # Normalize expected_header to a list, in case it's a single string.
+        valid_headers = (
+            expected_header if isinstance(expected_header, list) else [expected_header]
+        )
+
+        if actual_header in valid_headers:
             logger.info(f"Successfully validated the structure of '{file}'.")
             return True
         else:
             logger.warning(
-                f"The file '{file}' has unexpected columns. Expected: '{expected_header}'"
+                f"The file '{file}' has unexpected columns. Expected one of: {valid_headers} Got: '{actual_header}'"
             )
             return False
     except Exception as e:
@@ -305,6 +312,19 @@ def is_valid_call_cns_file(file: Path) -> bool:
     )
 
 
+def is_valid_mode_centred_cns_file(file: Path) -> bool:
+    """Validate that the call CNV segment file exists, is non-empty, has a '.cnr' suffix, and has the expected header."""
+    return (
+        file_exists_and_nonempty(file)
+        and is_regular_file(file)
+        and has_correct_suffix(file, ".cns")
+        and has_expected_header(
+            file,
+            "chromosome\tstart\tend\tgene\tlog2\tci_hi\tci_lo\tdepth\tprobes\tweight",
+        )
+    )
+
+
 def is_valid_bintest_cns_file(file: Path) -> bool:
     """Validate that the bintest segmentation file exists, is non-empty, and has the expected suffix."""
     return file_exists_and_nonempty(file) and has_correct_suffix(file, ".bintest.cns")
@@ -316,6 +336,7 @@ def is_valid_genemetrics_file(file: Path) -> bool:
     valid_headers = (
         "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tprobes",
         "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tp_ttest\tprobes\tsegment_weight\tsegment_probes",
+        "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tci_hi\tci_lo\tprobes\tsegment_weight\tsegment_probes",
     )
 
     return (
@@ -766,7 +787,9 @@ def perform_mode_centring(
     # Construct mode centring command
     mode_centring_cmd = f"cnvkit.py call -m none {copy_number_call_file} --center mode -o {mode_centred_file_path}"
 
-    if skip_file_generation(mode_centred_file_path, validator=is_valid_call_cns_file):
+    if skip_file_generation(
+        mode_centred_file_path, validator=is_valid_mode_centred_cns_file
+    ):
         return mode_centred_file_path, None
 
     try:
