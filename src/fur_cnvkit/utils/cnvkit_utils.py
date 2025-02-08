@@ -262,6 +262,54 @@ def is_valid_antitargetcoverage_file(file: Path) -> bool:
     )
 
 
+def validate_sample_coverage_files(
+    sample_id: str, sample_coverage_files: t.List[Path]
+) -> t.Tuple[Path, Path]:
+    """
+    Validates that a sample has exactly one target coverage file and one antitarget coverage file.
+
+    Args:
+        sample_id (str): The unique identifier of the sample.
+        sample_coverage_files (List[Path]): A list of file paths to check.
+
+    Returns:
+        Tuple[Path, Path]: A tuple containing the target coverage file and the antitarget coverage file.
+
+    Raises:
+        ValueError: If the expected files are missing or their counts are incorrect.
+
+    Logs:
+        Logs warnings for unexpected counts and information about successfully identified files.
+    """
+
+    def filter_files(file_list: t.List[Path], keyword: str) -> t.List[Path]:
+        """Filter files containing the specified keyword in their names."""
+        return [file for file in file_list if keyword in file.name]
+
+    target_files = filter_files(sample_coverage_files, ".targetcoverage.cnn")
+    antitarget_files = filter_files(sample_coverage_files, ".antitargetcoverage")
+
+    if not target_files or not antitarget_files:
+        raise ValueError(
+            f"Insufficient coverage files for sample '{sample_id}'. "
+            f"Expected one target and one antitarget file, but found: "
+            f"Target files: {len(target_files)}, Antitarget files: {len(antitarget_files)}."
+        )
+
+    if len(target_files) > 1 or len(antitarget_files) > 1:
+        logger.warning(
+            f"Unexpected number of coverage files for sample '{sample_id}'. "
+            f"Target files: {target_files}, Antitarget files: {antitarget_files}."
+        )
+
+    logger.info(
+        f"Successfully identified coverage files for sample '{sample_id}'. "
+        f"Target file: {target_files[0]}, Antitarget file: {antitarget_files[0]}."
+    )
+
+    return target_files[0], antitarget_files[0]
+
+
 def is_valid_reference_file(file: Path) -> bool:
     """Validate that the reference file exists, is non-empty, and has a '.reference.cnn' suffix."""
     return (
