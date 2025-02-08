@@ -16,7 +16,7 @@ from fur_cnvkit.utils.fur_utils import (
 from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_batch,
     filter_unplaced_contigs_from_cnvkit_output_file,
-    perform_mode_centring,
+    perform_centring,
     run_cnvkit_genemetrics,
     filter_genemetrics_file,
     run_cnvkit_diagram,
@@ -107,18 +107,23 @@ def perform_post_processing(
     ratio_file = next(
         f for f in sample_cnvkit_batch_output_files if f.name.endswith(".cnr")
     )
-    segment_file = next(
-        f
-        for f in sample_cnvkit_batch_output_files
-        if f.name.endswith(".cns") and "call" not in f.name and "bintest" not in f.name
+    call_segment_file = next(
+        f for f in sample_cnvkit_batch_output_files if f.name.endswith("call.cns")
     )
 
     logging.debug(f"Ratio file for sample {sample_id}: {ratio_file}")
-    logging.debug(f"Segment file for sample {sample_id}: {segment_file}")
+    logging.debug(f"Call segment file for sample {sample_id}: {call_segment_file}")
 
-    # Explicitly call mode centring on the segment file
-    mode_centred_segment_file, log2_shift_value = perform_mode_centring(
-        segment_file, outdir
+    # Explicitly call median centring on the segment file
+    median_centred_segment_file, log2_shift_value = perform_centring(
+        call_segment_file, outdir, centring_method="median"
+    )
+
+    logging.debug(
+        f"Median centred segment file for sample {sample_id}: {median_centred_segment_file}"
+    )
+    logging.debug(
+        f"Log2 shift value after median centring for sample {sample_id}: {log2_shift_value}"
     )
 
     # Store log2 shift value
@@ -145,7 +150,7 @@ def perform_post_processing(
         output_prefix=sample_id,
         outdir=outdir,
         sex=sex,
-        segment_file=mode_centred_segment_file,
+        segment_file=median_centred_segment_file,
     )
 
     logging.debug(
@@ -180,8 +185,11 @@ def perform_post_processing(
 
     # Run cnvkit.py diagram and scatter
     logging.info(f"Generating plots for sample {sample_id} ...")
-    run_cnvkit_diagram(ratio_file, mode_centred_segment_file, outdir)
-    run_cnvkit_scatter(ratio_file, mode_centred_segment_file, outdir)
+    diagram_plot = run_cnvkit_diagram(ratio_file, median_centred_segment_file, outdir)
+    scatter_plot = run_cnvkit_scatter(ratio_file, median_centred_segment_file, outdir)
+
+    logging.debug(f"Diagram plot for sample {sample_id}: {diagram_plot}")
+    logging.debug(f"Scatter plot for sample {sample_id}: {scatter_plot}")
 
     logging.info(f"Successfully processed sample {sample_id}.")
 
@@ -248,6 +256,7 @@ def process_sex_group(
     copy_number_reference_file = male_ref if sex == "male" else female_ref
     logging.debug(f"Copy number reference file: {copy_number_reference_file}")
 
+    # Run cnvkit.py batch on this sex group
     batch_output_dir = run_cnvkit_batch(
         tumour_bams=sex_tumour_bams,
         copy_number_reference_file=copy_number_reference_file,
@@ -255,12 +264,16 @@ def process_sex_group(
         sex=sex,
     )
 
+    # Get a list of cnvkit.py batch output files for this sex group
     batch_output_files = [Path(f) for f in batch_output_dir.glob("*") if f.is_file()]
+
+    # Get a list of sample IDs for this sex group
     sex_sample_ids = get_sample_ids_for_file_list(sex_tumour_bams)
 
     # Create a list to store the genemetrics files from these samples
     sex_genemetrics_files = []
 
+    # Iterate through each sample and process its' cnvkit.py batch output files
     for sample_id in sex_sample_ids:
         sample_genemetrics_file = process_sample(
             sample_id,
@@ -299,7 +312,7 @@ def generate_genemetrics_study_summary_csv(
     # Collect gene-level log2 data in a list of Series, one per sample
     sample_series_list = []
 
-    # Set of UCSC labels to skip if they appear as "genes"
+    # Set of UCSC labels in the "gene" column to skip
     skip_labels = {"none", "unk", "incmpl", "cmpl"}
 
     for genemetrics_file in genemetrics_files:
@@ -373,7 +386,7 @@ def process_study(
         study_tumour_bams, sample_metadata_xlsx
     )
 
-    # Create a list to store mode-centred log2 shift values
+    # Create a list to store centred log2 shift values
     log2_shift_records: t.List[t.Dict[str, t.Any]] = []
 
     # Create a list to store genemetrics files for this study
@@ -426,7 +439,7 @@ def process_study(
         study_id=study_id,
         genemetrics_files=study_genemetrics_files,
         baitset_genes_file=baitset_genes_file,
-        outdir=outdir,
+        outdir=study_outdir,
     )
 
 
