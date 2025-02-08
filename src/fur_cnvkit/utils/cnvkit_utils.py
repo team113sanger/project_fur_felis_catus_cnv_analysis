@@ -312,16 +312,12 @@ def is_valid_call_cns_file(file: Path) -> bool:
     )
 
 
-def is_valid_mode_centred_cns_file(file: Path) -> bool:
+def is_valid_centred_file(file: Path) -> bool:
     """Validate that the call CNV segment file exists, is non-empty, has a '.cnr' suffix, and has the expected header."""
     return (
         file_exists_and_nonempty(file)
         and is_regular_file(file)
-        and has_correct_suffix(file, ".cns")
-        and has_expected_header(
-            file,
-            "chromosome\tstart\tend\tgene\tlog2\tci_hi\tci_lo\tdepth\tprobes\tweight",
-        )
+        and has_correct_suffix(file, "centred.cns")
     )
 
 
@@ -762,40 +758,66 @@ def run_cnvkit_diagram(
 # -----------------------------------------------------------------------------
 # CNVKit batch postprocessing functions
 # -----------------------------------------------------------------------------
-def perform_mode_centring(
-    copy_number_call_file: Path, outdir: Path
+def _check_centring_method(centring_method: str):
+    # Define the allowed centring methods.
+    allowed_methods = {"mean", "median", "mode", "biweight"}
+    if centring_method not in allowed_methods:
+        raise ValueError(
+            f"Invalid centring_method: {centring_method}. "
+            f"Must be one of: {', '.join(sorted(allowed_methods))}"
+        )
+
+
+def perform_centring(
+    copy_number_call_file: Path,
+    outdir: Path,
+    centring_method: str = "median",
 ) -> t.Tuple[Path, t.Optional[float]]:
     """
-    Perform mode centring using CNVKit and extract the log2 shift value.
+    Perform centring using CNVKit and extract the log2 shift value with the specified centring method.
+
+    Accepted centring methods are: "mean", "median", "mode", "biweight".
 
     Args:
         copy_number_call_file (Path): The input file containing CNV calls.
-        outdir (Path): The output directory to save the mode-centered file.
+        outdir (Path): The output directory to save the centred file.
+        centring_method (str, optional): The centring method to use.
+            Must be one of "mean", "median", "mode", or "biweight".
+            Defaults to "median".
 
     Returns:
         Tuple[Path, Optional[float]]: A tuple containing:
-            - The path to the mode-centered file.
+            - The path to the centred file.
             - The extracted log2 shift value (None if not found).
+
+    Raises:
+        ValueError: If an unsupported centring method is provided.
     """
-    logger.info(f"Performing mode centring on {str(copy_number_call_file)}")
+    # Check that the supplied centring method is a valid method
+    _check_centring_method(centring_method)
 
-    # Construct the output file path
-    mode_centred_suffix = ".mode_centred" + copy_number_call_file.suffix
-    mode_centred_file_name = copy_number_call_file.stem + mode_centred_suffix
-    mode_centred_file_path = outdir / mode_centred_file_name
+    logger.info(f"Performing {centring_method} centring on {copy_number_call_file} ...")
 
-    # Construct mode centring command
-    mode_centring_cmd = f"cnvkit.py call -m none {copy_number_call_file} --center mode -o {mode_centred_file_path}"
+    # Construct the output file path using the centring method in the suffix.
+    centred_suffix = f".{centring_method}_centred{copy_number_call_file.suffix}"
+    centred_file_name = copy_number_call_file.stem + centred_suffix
+    centred_file_path = outdir / centred_file_name
 
-    if skip_file_generation(
-        mode_centred_file_path, validator=is_valid_mode_centred_cns_file
-    ):
-        return mode_centred_file_path, None
+    # Construct the centring command with the specified centring method.
+    centring_cmd = (
+        f"cnvkit.py call -m none {copy_number_call_file} --center {centring_method} "
+        f"-o {centred_file_path}"
+    )
+
+    # If the output file already exists and is valid, skip generation.
+    if skip_file_generation(centred_file_path, validator=is_valid_centred_file):
+        return centred_file_path, None
 
     try:
-        result = execute_command(mode_centring_cmd)
-        log_success(mode_centring_cmd, result)
+        result = execute_command(centring_cmd)
+        log_success(centring_cmd, result)
 
+        # Attempt to extract the log2 shift value from the command's stderr.
         match = re.search(r"Shifting log2 values by ([\d.-]+)", result.stderr)
         shift_value = float(match.group(1)) if match else None
 
@@ -804,11 +826,11 @@ def perform_mode_centring(
         else:
             logger.warning("No log2 shift value found in the output.")
 
-        return mode_centred_file_path, shift_value
+        return centred_file_path, shift_value
 
     except subprocess.CalledProcessError as e:
-        log_error(mode_centring_cmd, e)
-        return mode_centred_file_path, None
+        log_error(centring_cmd, e)
+        return centred_file_path, None
 
 
 def filter_genemetrics_file(
