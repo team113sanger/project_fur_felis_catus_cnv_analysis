@@ -324,13 +324,16 @@ def is_valid_reference_file(file: Path) -> bool:
 
 def is_valid_cnr_file(file: Path) -> bool:
     """Validate that the CNV ratio file exists, is non-empty, has a '.cnr' suffix, and has the expected header."""
+    valid_headers = [
+        "chromosome\tstart\tend\tgene\tdepth\tlog2\tweight",
+        "chromosome\tstart\tend\tgene\tlog2\tdepth\tweight",
+    ]
+
     return (
         file_exists_and_nonempty(file)
         and is_regular_file(file)
         and has_correct_suffix(file, ".cnr")
-        and has_expected_header(
-            file, "chromosome\tstart\tend\tgene\tdepth\tlog2\tweight"
-        )
+        and has_expected_header(file, valid_headers)
     )
 
 
