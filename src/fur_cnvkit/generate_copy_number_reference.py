@@ -71,6 +71,7 @@ def main():
     logging.debug(f"Antitargets BED: {str(antitargets_bed)}")
 
     # Process normal BAMs to get a dictionary of BAMs separated by sex
+    logging.info("Separating normal BAMs based on their sex ...")
     sex_separated_normal_bams = split_file_list_by_sample_sex(
         normal_bams, sample_metadata_xlsx
     )
@@ -78,70 +79,62 @@ def main():
 
     # Use CNVKit to generate a copy number reference for each sex
     for sex in sex_separated_normal_bams:
+        logging.info(
+            f"Running CNVKit copy number reference generation for {sex} samples ..."
+        )
+
         sex_outdir = outdir / sex
         sex_outdir.mkdir(parents=True, exist_ok=True)
+
+        logging.debug(
+            f"Output directory for {sex} samples generated at {str(sex_outdir)}"
+        )
 
         # Extract the sex-separated normal BAMs for the given sex from the dictionary
         sex_normal_bams = sex_separated_normal_bams[sex]
 
-        # Run CNVKit coverage on the sex-separated BAMs
+        # Initialise a list to store coverage files for this sex
         sex_normal_coverage_files = []
 
-        # Loop through the normal sample BAMs
+        # Make a directory for coverage files, if it does not exist
+        coverage_file_dir = sex_outdir / "coverage_files"
+        coverage_file_dir.mkdir(parents=True, exist_ok=True)
+
+        # Loop through the normal sample BAMs for this sex
         for sample_bam in sex_normal_bams:
-            # Derive the sample name from the BAM file
-            sample_name = Path(sample_bam).stem
-
-            # Make a directory for coverage files, if it does not exist
-            coverage_file_dir = sex_outdir / "coverage_files"
-            coverage_file_dir.mkdir(parents=True, exist_ok=True)
-
-            # Derive the expected coverage file paths
-            sample_target_coverage_file = (
-                coverage_file_dir / f"{sample_name}.targetcoverage.cnn"
-            )
-            sample_antitarget_coverage_file = (
-                coverage_file_dir / f"{sample_name}.antitargetcoverage.cnn"
+            # Run cnvkit.py coverage for this sample on target regions
+            sample_target_coverage_file = run_cnvkit_coverage(
+                sample_bam, targets_bed, coverage_file_dir
             )
 
-            # Check if the target coverage file exists
-            if sample_target_coverage_file.exists():
-                logging.info(
-                    f"Skipping generation of target coverage for {sample_name} "
-                    f"because {sample_target_coverage_file} already exists."
-                )
-            else:
-                # Run coverage if file does not exist
-                logging.info(
-                    f"Generating target coverage for {sample_name} "
-                    f" -> {sample_target_coverage_file}"
-                )
-                run_cnvkit_coverage(sample_bam, targets_bed, coverage_file_dir)
+            # Run cnvkit.py coverage for this sample on antitarget regions
+            sample_antitarget_coverage_file = run_cnvkit_coverage(
+                sample_bam, antitargets_bed, coverage_file_dir
+            )
 
-            # Check if the antitarget coverage file exists
-            if sample_antitarget_coverage_file.exists():
-                logging.info(
-                    f"Skipping generation of antitarget coverage for {sample_name} "
-                    f"because {sample_antitarget_coverage_file} already exists."
-                )
-            else:
-                logging.info(
-                    f"Generating antitarget coverage for {sample_name} "
-                    f" -> {sample_antitarget_coverage_file}"
-                )
-                run_cnvkit_coverage(sample_bam, antitargets_bed, coverage_file_dir)
-
-            # Regardless of whether the files existed or were newly created,
-            # append them to the coverage file list.
+            # Append the coverage files for this sample to the list
             sex_normal_coverage_files.extend(
                 [sample_target_coverage_file, sample_antitarget_coverage_file]
             )
 
-        logging.debug(f"Coverage files: {sex_normal_coverage_files}")
+        logging.debug(f"Coverage files for {sex} samples: {sex_normal_coverage_files}")
 
         # Perform pairwise normal vs. normal comparisons to filter coverage files
+        logging.info(f"Performing normal vs. normal comparisons for {sex} samples ...")
+
+        # Make a directory for the normal vs. normal comparisons, if it does not exist yet
         normal_vs_normal_dir = sex_outdir / "normal_vs_normal"
         normal_vs_normal_dir.mkdir(parents=True, exist_ok=True)
+
+        logging.debug(
+            f"Normal vs. normal comparison directory for {sex} samples generated at {str(normal_vs_normal_dir)}"
+        )
+
+        # Perform normal vs. normal comparisons to produce a list of filtered coverage files
+        logging.info(
+            "Performing normal vs. normal comparisons to filter out potentially spurious coverage files ..."
+        )
+
         filtered_coverage_files = perform_normal_vs_normal_comparisons(
             sex_normal_coverage_files,
             reference_fasta,
@@ -152,6 +145,10 @@ def main():
         logging.debug(f"Filtered coverage files: {filtered_coverage_files}")
 
         # Run CNVKit reference to create a new copy number reference using the filtered coverage files
+        logging.info(
+            f"Generating a copy number reference for {sex} samples using the filtered coverage files ..."
+        )
+
         sex_copy_number_reference_file = run_cnvkit_reference(
             coverage_files=filtered_coverage_files,
             reference_fasta=reference_fasta,
