@@ -384,6 +384,7 @@ def is_valid_genemetrics_file(file: Path) -> bool:
         "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tprobes",
         "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tp_ttest\tprobes\tsegment_weight\tsegment_probes",
         "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tci_hi\tci_lo\tprobes\tsegment_weight\tsegment_probes",
+        "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tp_ttest\tprobes\tsegment_weight\tsegment_probes",
     )
 
     return (
@@ -930,7 +931,7 @@ def parse_genemetrics_file(file_path: Path):
             log2_value = float(parts[4])
             log2_values.append(log2_value)
 
-    logger.debug(f"Log2(FC) values from {str(file_path)}: {log2_values}")
+    # logger.debug(f"Log2(FC) values from {str(file_path)}: {log2_values}")
     return log2_values
 
 
