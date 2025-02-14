@@ -11,7 +11,7 @@ from fur_cnvkit.utils.cnvkit_utils import (
     run_command,
     run_cnvkit_access,
     run_cnvkit_autobin,
-    perform_mode_centring,
+    perform_centring,
     filter_genemetrics_file,
 )
 from fur_cnvkit.utils import cnvkit_utils
@@ -122,40 +122,40 @@ def mock_paths():
 
 
 @patch("fur_cnvkit.utils.cnvkit_utils.execute_command")
-def test_perform_mode_centring_success(mock_execute_command, mock_paths):
-    """Test perform_mode_centring with a valid log2 shift output."""
+def test_perform_centring_success(mock_execute_command, mock_paths):
+    """Test perform_centring with a valid log2 shift output."""
 
     # Mock successful command output
-    mock_stdout = "Shifting log2 values by 0.039127\nWrote mock_output/mock_input.mode_centred.cns with 20 regions"
-    mock_result = MagicMock(stdout=mock_stdout)
+    mock_stderr = "Shifting log2 values by 0.039127\nWrote mock_output/mock_input.median_centred.cns with 20 regions"
+    mock_result = MagicMock(stderr=mock_stderr)
     mock_execute_command.return_value = mock_result
 
     input_file, output_dir = mock_paths
-    output_file, shift_value = perform_mode_centring(input_file, output_dir)
+    output_file, shift_value = perform_centring(input_file, output_dir)
 
-    assert output_file == output_dir / "mock_input.mode_centred.cns"
+    assert output_file == output_dir / "mock_input.median_centred.cns"
     assert shift_value == 0.039127  # Extracted from the mocked output
 
 
 @patch("fur_cnvkit.utils.cnvkit_utils.execute_command")
-def test_perform_mode_centring_no_shift_value(mock_execute_command, mock_paths):
-    """Test perform_mode_centring when no shift value is found."""
+def test_perform_centring_no_shift_value(mock_execute_command, mock_paths):
+    """Test perform_centring when no shift value is found."""
 
     # Mock output without log2 shift value
-    mock_stdout = "Wrote mock_output/mock_input.mode_centred.cns with 20 regions"
-    mock_result = MagicMock(stdout=mock_stdout)
+    mock_stderr = "Wrote mock_output/mock_input.median_centred.cns with 20 regions"
+    mock_result = MagicMock(stderr=mock_stderr)
     mock_execute_command.return_value = mock_result
 
     input_file, output_dir = mock_paths
-    output_file, shift_value = perform_mode_centring(input_file, output_dir)
+    output_file, shift_value = perform_centring(input_file, output_dir)
 
-    assert output_file == output_dir / "mock_input.mode_centred.cns"
+    assert output_file == output_dir / "mock_input.median_centred.cns"
     assert shift_value is None  # No shift value in output
 
 
 @patch("fur_cnvkit.utils.cnvkit_utils.execute_command")
-def test_perform_mode_centring_command_failure(mock_execute_command, mock_paths):
-    """Test perform_mode_centring when the command fails."""
+def test_perform_centring_command_failure(mock_execute_command, mock_paths):
+    """Test perform_centring when the command fails."""
 
     # Mock subprocess failure
     mock_execute_command.side_effect = subprocess.CalledProcessError(
@@ -163,9 +163,9 @@ def test_perform_mode_centring_command_failure(mock_execute_command, mock_paths)
     )
 
     input_file, output_dir = mock_paths
-    output_file, shift_value = perform_mode_centring(input_file, output_dir)
+    output_file, shift_value = perform_centring(input_file, output_dir)
 
-    assert output_file == output_dir / "mock_input.mode_centred.cns"
+    assert output_file == output_dir / "mock_input.median_centred.cns"
     assert shift_value is None  # Expect None due to command failure
 
 
