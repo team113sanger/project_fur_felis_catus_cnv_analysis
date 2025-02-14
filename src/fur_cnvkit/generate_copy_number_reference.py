@@ -10,6 +10,7 @@ from fur_cnvkit.utils.cnvkit_utils import (
 from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_parameter_json,
     split_file_list_by_sample_sex,
+    get_sample_ids_for_file_list,
 )
 
 
@@ -143,6 +144,17 @@ def main():
         )
 
         logging.debug(f"Filtered coverage files: {filtered_coverage_files}")
+
+        # Create a file containing samples that made it into the final reference
+        used_samples_file_name = "samples_used_in_reference.txt"
+        used_samples_file_path = sex_outdir / used_samples_file_name
+
+        samples_used_in_reference_list = get_sample_ids_for_file_list(
+            filtered_coverage_files
+        )
+
+        with open(used_samples_file_path, "w") as f:
+            f.writelines(samples_used_in_reference_list)
 
         # Run CNVKit reference to create a new copy number reference using the filtered coverage files
         logging.info(
