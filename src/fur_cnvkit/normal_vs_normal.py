@@ -113,6 +113,10 @@ def perform_normal_vs_normal_comparisons(
         bottom_10pct_samples["Reference Sample"]
     )
 
+    logger.debug(
+        f"Samples filtered out by normal vs. normal comparisons: {sample_ids_10pct}"
+    )
+
     # Filter out the top and bottom 10% samples from the normal coverage files
     filtered_normal_coverage_files = filter_files_by_exclude_samples(
         normal_coverage_files, sample_ids_10pct
@@ -363,7 +367,6 @@ def collate_log2_ratios(
 
     # Convert the log2 data to a DataFrame
     log2_df = pd.DataFrame(log2_data)
-    logger.debug(f"Log2 DataFrame: {log2_df}")
 
     # Write the log2 data to a CSV file
     log2_df.to_csv(output_csv, index=False)
