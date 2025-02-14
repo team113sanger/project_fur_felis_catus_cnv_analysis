@@ -21,6 +21,7 @@ def test_generate_parameter_file():
         targets_bed = tempdir_path / "targets.bed"
         antitargets_bed = tempdir_path / "antitargets.bed"
         access_bed = tempdir_path / "access.bed"
+        baitset_genes_file = tempdir_path / "baitset_genes.txt"
         unplaced_contig_prefixes = ["chrUn", "chrAlt"]
         parameter_file_name = "test"
         outdir = tempdir_path
@@ -34,6 +35,7 @@ def test_generate_parameter_file():
             targets_bed,
             antitargets_bed,
             access_bed,
+            baitset_genes_file,
         ]:
             file.touch()
 
@@ -52,7 +54,7 @@ def test_generate_parameter_file():
         sample_metadata_df = pd.DataFrame(sample_metadata_content)
         sample_metadata_df.to_excel(sample_metadata_xlsx, index=False)
 
-        # Call the function
+        # Call the updated function (note the additional baitset_genes_file argument)
         output_parameter_file = generate_parameter_file(
             bam_files=bam_files,
             reference_fasta=reference_fasta,
@@ -63,6 +65,7 @@ def test_generate_parameter_file():
             access_bed=access_bed,
             targets_bed=targets_bed,
             antitargets_bed=antitargets_bed,
+            baitset_genes_file=baitset_genes_file,  # New argument
             parameter_file_name=parameter_file_name,
             outdir=outdir,
         )
@@ -90,6 +93,7 @@ def test_generate_parameter_file():
             "access_bed": str(access_bed),
             "targets_bed": str(targets_bed),
             "antitargets_bed": str(antitargets_bed),
+            "baitset_genes_file": str(baitset_genes_file),
         }
 
         assert parameter_file_data == expected_parameter_file_data
