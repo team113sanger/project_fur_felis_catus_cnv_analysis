@@ -1,20 +1,83 @@
-import shutil
-import pathlib
 import os
+import pathlib
 import subprocess
 import re
+import shutil
 import pytest
 
-from fur_cnvkit.utils import cnvkit_utils
-
-# CONSTANTS
+# Environment variable constants
 ENV_VAR_BAM_DIR = "TEST_BAM_DIR"
 ENV_VAR_BAITSET_DIR = "TEST_BAITSET_DIR"
 ENV_VAR_GENOME_DIR = "TEST_GENOME_DIR"
 ENV_VAR_ANNOTATION_DIR = "TEST_ANNOTATION_DIR"
 
 
-# HELPERS
+# -------------------------------
+# Fixtures
+# -------------------------------
+
+
+@pytest.fixture
+def feline_reference_fasta() -> pathlib.Path:
+    """
+    Returns the path to the reference FASTA file.
+    Skips the test if the file is not found.
+    """
+    raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
+    expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
+    reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
+    if not reference_fasta.exists():
+        pytest.skip(f"Reference FASTA not found: {reference_fasta}")
+    return reference_fasta
+
+
+@pytest.fixture
+def feline_baitset() -> pathlib.Path:
+    """
+    Returns the path to the baitset file.
+    Skips the test if the file is not found.
+    """
+    raw_baitset_dir = os.environ.get(ENV_VAR_BAITSET_DIR, "")
+    expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
+    baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
+    if not baitset.exists():
+        pytest.skip(f"Baitset file not found: {baitset}")
+    return baitset
+
+
+@pytest.fixture
+def feline_refflat_file() -> pathlib.Path:
+    """
+    Returns the path to the refflat file.
+    Skips the test if the file is not found.
+    """
+    raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
+    expected_refflat_file = "refflat.txt"  # Adjust the filename if necessary
+    refflat_file = pathlib.Path(raw_annotation_dir) / expected_refflat_file
+    if not refflat_file.exists():
+        pytest.skip(f"Refflat file not found: {refflat_file}")
+    return refflat_file
+
+
+@pytest.fixture
+def bams() -> list[pathlib.Path]:
+    """
+    Returns a list of BAM files.
+    Skips the test if no BAM files are found.
+    """
+    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
+    bam_dir = pathlib.Path(raw_bam_dir)
+    bam_files = list(bam_dir.glob("**/*.bam"))
+    if not bam_files:
+        pytest.skip("No BAM files found")
+    return bam_files
+
+
+# -------------------------------
+# Additional helpers to determine if test data is available
+# -------------------------------
+
+
 def can_find_bams() -> bool:
     raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
     bam_dir = pathlib.Path(raw_bam_dir)
@@ -28,30 +91,16 @@ def can_find_baitset() -> bool:
 
 
 def should_skip_tests() -> bool:
+    """
+    Returns True if required BAM and baitset files are not found.
+    This can be used with @pytest.mark.skipif.
+    """
     return not all([can_find_bams(), can_find_baitset()])
 
 
-# Optional fixtures that also allow skipping tests if required files are missing
-@pytest.fixture
-def required_bams():
-    if not can_find_bams():
-        pytest.skip("No BAM files found in environment.")
-    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR)
-    bam_dir = pathlib.Path(raw_bam_dir)
-    return list(bam_dir.glob("**/*.bam"))
-
-
-@pytest.fixture
-def required_baitset():
-    if not can_find_baitset():
-        pytest.skip("No baitset files found in environment.")
-    raw_baitset = os.environ.get(ENV_VAR_BAITSET_DIR)
-    baitset = pathlib.Path(raw_baitset)
-    # Return the first .bed file found
-    return next(baitset.glob("**/*.bed"))
-
-
-# TESTS
+# -------------------------------
+# Test functions
+# -------------------------------
 
 
 def test_cnvkit_is_installed():
@@ -174,6 +223,8 @@ def test_is_R_installed():
 
 def test_is_DNACopy_a_findable_R_package():
     # Given
+    from fur_cnvkit.utils import cnvkit_utils
+
     package = "DNAcopy"
 
     # When
@@ -186,6 +237,8 @@ def test_is_DNACopy_a_findable_R_package():
 
 def test_is_ComplexHeatmap_a_findable_R_package():
     # Given
+    from fur_cnvkit.utils import cnvkit_utils
+
     package = "ComplexHeatmap"
 
     # When
