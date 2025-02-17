@@ -29,8 +29,10 @@ def mock_file_path(tmp_path):
 def bams() -> list[pathlib.Path]:
     raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
     bam_dir = pathlib.Path(raw_bam_dir)
-
-    return list(bam_dir.glob("**/*.bam"))
+    bam_files = list(bam_dir.glob("**/*.bam"))
+    if not bam_files:
+        pytest.skip(f"No BAM files found in directory {bam_dir}")
+    return bam_files
 
 
 @pytest.fixture
@@ -39,7 +41,7 @@ def feline_baitset() -> pathlib.Path:
     expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
     baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
     if not baitset.exists():
-        raise FileNotFoundError(f"Could not find baitset at {baitset}")
+        pytest.skip(f"Could not find baitset at {baitset}")
     return baitset
 
 
@@ -49,9 +51,7 @@ def feline_reference_fasta() -> pathlib.Path:
     expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
     reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
     if not reference_fasta.exists():
-        raise FileNotFoundError(
-            f"Could not find reference FASTA at {str(reference_fasta)}"
-        )
+        pytest.skip(f"Could not find reference FASTA at {reference_fasta}")
     return reference_fasta
 
 
@@ -59,14 +59,14 @@ def feline_reference_fasta() -> pathlib.Path:
 def feline_refflat_file() -> pathlib.Path:
     raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
     if not raw_annotation_dir:
-        raise ValueError(
+        pytest.skip(
             f"Environment variable {ENV_VAR_ANNOTATION_DIR} is not set or empty."
         )
     refflat_dir = pathlib.Path(raw_annotation_dir).resolve() / "refFlat_files"
     expected_refflat_file = "Felis_catus.Felis_catus_9.0.104.refFlat.txt"
     refflat_file = refflat_dir / expected_refflat_file
     if not refflat_file.exists():
-        raise FileNotFoundError(f"Could not find refFlat file at {str(refflat_file)}")
+        pytest.skip(f"Could not find refFlat file at {refflat_file}")
     return refflat_file
 
 
@@ -77,7 +77,5 @@ def feline_cnvkit_access_bed() -> pathlib.Path:
     expected_cnvkit_access_bed = "access-Felis_catus.Felis_catus_9.0.dna.toplevel.bed"
     cnvkit_access_bed = cnvkit_access_dir / expected_cnvkit_access_bed
     if not cnvkit_access_bed.exists():
-        raise FileNotFoundError(
-            f"Could not find CNVKit access BED at {str(cnvkit_access_bed)}"
-        )
+        pytest.skip(f"Could not find CNVKit access BED at {cnvkit_access_bed}")
     return cnvkit_access_bed
