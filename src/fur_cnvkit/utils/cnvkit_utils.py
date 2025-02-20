@@ -807,6 +807,77 @@ def run_cnvkit_diagram(
     return output_diagram_plot_path
 
 
+def parse_cnvkit_sex_output(output: str, file: Path) -> set:
+    """
+    Parses the output from cnvkit.py sex and returns a set of sex values.
+
+    Args:
+        output (str): The raw stdout output from cnvkit.py sex.
+        file (Path): The file that was processed (for logging purposes).
+
+    Returns:
+        set: A set containing the sex values found (e.g., {"male"}, {"female"}, or possibly empty).
+    """
+    lines = output.strip().splitlines()
+    if len(lines) < 2:
+        logger.error(
+            f"Unexpected output format from cnvkit.py sex for {file}: {output}"
+        )
+        return set()
+    sexes = set()
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts) >= 2:
+            sex = parts[1].strip().lower()
+            if sex in ("male", "female"):
+                sexes.add(sex)
+            else:
+                logger.error(
+                    f"Unexpected sex value from cnvkit.py sex for {file}: {sex}"
+                )
+    return sexes
+
+
+def _select_single_sex(sexes: t.Set[str], files: t.List[Path]) -> str:
+    """
+    Given a set of sex values, return the single sex if only one exists.
+    If the set is empty or contains multiple values, log an error and return "unknown".
+    """
+    if len(sexes) == 1:
+        return sexes.pop()
+    if len(sexes) > 1:
+        logger.error(
+            f"Inconsistent sex results from cnvkit.py sex for files {files}: {sexes}"
+        )
+    return "unknown"
+
+
+def run_cnvkit_sex(files: t.List[Path]) -> str:
+    """
+    Runs 'cnvkit.py sex' on the provided list of files (from the same sample)
+    and extracts the sex from its output.
+
+    Args:
+        files (List[Path]): A list of file paths (e.g., target and antitarget coverage files) for the sample.
+
+    Returns:
+        str: "male" or "female" if a single, consistent sex is found; otherwise "unknown".
+    """
+    if not files:
+        logger.error("No files provided to determine sample sex.")
+        return "unknown"
+
+    cmd = f"cnvkit.py sex {' '.join(str(file) for file in files)}"
+    try:
+        result = execute_command(cmd)
+    except subprocess.CalledProcessError as e:
+        log_error(cmd, e)
+        return "unknown"
+
+    sexes = parse_cnvkit_sex_output(result.stdout, files[0])
+    return _select_single_sex(sexes, files)
+
+
 # -----------------------------------------------------------------------------
 # CNVKit batch postprocessing functions
 # -----------------------------------------------------------------------------
