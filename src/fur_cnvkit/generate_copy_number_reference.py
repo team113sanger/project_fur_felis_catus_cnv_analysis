@@ -6,6 +6,7 @@ from fur_cnvkit.normal_vs_normal import perform_normal_vs_normal_comparisons
 from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_coverage,
     run_cnvkit_reference,
+    run_cnvkit_sex,
 )
 from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_parameter_json,
@@ -15,18 +16,14 @@ from fur_cnvkit.utils.fur_utils import (
 
 
 def configure_logging():
-    """
-    Define logging configuration
-    """
+    """Define logging configuration."""
     logging.basicConfig(
         level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
 
 def parse_arguments():
-    """
-    Define and parse command line arguments
-    """
+    """Define and parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Generate a copy number reference file for a given cohort of samples."
     )
@@ -40,22 +37,118 @@ def parse_arguments():
     parser.add_argument(
         "-o", "--outdir", type=Path, required=True, help="Path to the output directory."
     )
-
     return parser.parse_args()
 
 
+def reclassify_unknown_samples(
+    sex_separated_normal_bams: dict,
+    targets_bed: Path,
+    antitargets_bed: Path,
+    outdir: Path,
+):
+    """
+    For any samples initially marked as 'unknown' (from metadata Excel), generate
+    coverage files and use run_cnvkit_sex to determine their sex. The sample
+    is then added to the appropriate 'male' or 'female' group.
+    """
+    if "unknown" not in sex_separated_normal_bams:
+        return sex_separated_normal_bams
+
+    unknown_samples = sex_separated_normal_bams.pop("unknown")
+    unknown_dir = outdir / "unknown"
+    unknown_cov_dir = unknown_dir / "coverage_files"
+    unknown_cov_dir.mkdir(parents=True, exist_ok=True)
+
+    for sample_bam in unknown_samples:
+        logging.info(f"Reclassifying sample {sample_bam} with unknown sex ...")
+        target_cov = run_cnvkit_coverage(sample_bam, targets_bed, unknown_cov_dir)
+        antitarget_cov = run_cnvkit_coverage(
+            sample_bam, antitargets_bed, unknown_cov_dir
+        )
+        determined_sex = run_cnvkit_sex([target_cov, antitarget_cov])
+        logging.info(f"Determined sex for sample {sample_bam}: {determined_sex}")
+        if determined_sex in ("male", "female"):
+            sex_separated_normal_bams.setdefault(determined_sex, []).append(sample_bam)
+        else:
+            logging.warning(
+                f"Sample {sample_bam} remains unknown after reclassification."
+            )
+
+    return sex_separated_normal_bams
+
+
+def generate_reference_for_sex(
+    sex: str,
+    sex_normal_bams: list,
+    outdir: Path,
+    reference_fasta: Path,
+    targets_bed: Path,
+    antitargets_bed: Path,
+    sample_metadata_xlsx: Path,
+):
+    """
+    For a given sex, generate coverage files, perform normal vs. normal comparisons,
+    and create a copy number reference using the filtered coverage files.
+    """
+    logging.info(f"Running CNVKit reference generation for {sex} samples ...")
+    sex_outdir = outdir / sex
+    sex_outdir.mkdir(parents=True, exist_ok=True)
+    coverage_file_dir = sex_outdir / "coverage_files"
+    coverage_file_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate coverage files for each sample.
+    sex_normal_coverage_files = []
+    for sample_bam in sex_normal_bams:
+        logging.info(f"Generating coverage files for sample {sample_bam} ({sex})...")
+        target_cov = run_cnvkit_coverage(sample_bam, targets_bed, coverage_file_dir)
+        antitarget_cov = run_cnvkit_coverage(
+            sample_bam, antitargets_bed, coverage_file_dir
+        )
+        sex_normal_coverage_files.extend([target_cov, antitarget_cov])
+    logging.debug(f"Coverage files for {sex} samples: {sex_normal_coverage_files}")
+
+    # Perform normal vs. normal comparisons to filter the coverage files.
+    normal_vs_normal_dir = sex_outdir / "normal_vs_normal"
+    normal_vs_normal_dir.mkdir(parents=True, exist_ok=True)
+    filtered_coverage_files = perform_normal_vs_normal_comparisons(
+        sex_normal_coverage_files,
+        reference_fasta,
+        sample_metadata_xlsx,
+        normal_vs_normal_dir,
+    )
+    logging.debug(f"Filtered coverage files for {sex}: {filtered_coverage_files}")
+
+    # Record the samples used for the reference.
+    used_samples_file_path = sex_outdir / "samples_used_in_reference.txt"
+    samples_used_in_reference_list = get_sample_ids_for_file_list(
+        filtered_coverage_files
+    )
+    with open(used_samples_file_path, "w") as f:
+        for sample_id in samples_used_in_reference_list:
+            f.write(f"{sample_id}\n")
+
+    # Generate the copy number reference.
+    logging.info(f"Generating copy number reference for {sex} samples ...")
+    sex_reference_file = run_cnvkit_reference(
+        coverage_files=filtered_coverage_files,
+        reference_fasta=reference_fasta,
+        output_prefix=sex,
+        outdir=sex_outdir,
+        sex=sex,
+    )
+    logging.debug(f"Reference for {sex} samples generated at: {sex_reference_file}")
+
+
 def main():
-    # Get command line arguments
     logging.info("Getting command line arguments...")
     args = parse_arguments()
-
     parameter_file = args.parameter_file
     outdir = args.outdir
 
     logging.debug(f"Parameter file: {parameter_file}")
     logging.debug(f"Outdir: {outdir}")
 
-    # Extract metadata files from parameter file
+    # Extract metadata from the parameter file.
     metadata = extract_metadata_files_from_parameter_json(parameter_file)
     normal_bams = metadata["normal_bams"]
     reference_fasta = metadata["reference_fasta"]
@@ -65,112 +158,38 @@ def main():
     antitargets_bed = metadata["antitargets_bed"]
 
     logging.debug(f"Normal BAMs: {normal_bams}")
-    logging.debug(f"Reference FASTA: {str(reference_fasta)}")
-    logging.debug(f"Baitset BED: {str(baitset_bed)}")
-    logging.debug(f"Sample metadata Excel spreadsheet: {str(sample_metadata_xlsx)}")
-    logging.debug(f"Targets BED: {str(targets_bed)}")
-    logging.debug(f"Antitargets BED: {str(antitargets_bed)}")
+    logging.debug(f"Reference FASTA: {reference_fasta}")
+    logging.debug(f"Baitset BED: {baitset_bed}")
+    logging.debug(f"Sample metadata Excel: {sample_metadata_xlsx}")
+    logging.debug(f"Targets BED: {targets_bed}")
+    logging.debug(f"Antitargets BED: {antitargets_bed}")
 
-    # Process normal BAMs to get a dictionary of BAMs separated by sex
-    logging.info("Separating normal BAMs based on their sex ...")
+    # Group normal BAMs by their metadata sex.
+    logging.info("Separating normal BAMs based on their metadata sex ...")
     sex_separated_normal_bams = split_file_list_by_sample_sex(
         normal_bams, sample_metadata_xlsx
     )
-    logging.debug(f"Split normal BAM files by sex: {sex_separated_normal_bams}")
+    logging.debug(f"Initial grouping by sex: {sex_separated_normal_bams}")
 
-    # Use CNVKit to generate a copy number reference for each sex
-    for sex in sex_separated_normal_bams:
-        logging.info(
-            f"Running CNVKit copy number reference generation for {sex} samples ..."
-        )
+    # Reclassify unknown samples using coverage files.
+    sex_separated_normal_bams = reclassify_unknown_samples(
+        sex_separated_normal_bams, targets_bed, antitargets_bed, outdir
+    )
+    logging.debug(f"Final grouping of samples by sex: {sex_separated_normal_bams}")
 
-        sex_outdir = outdir / sex
-        sex_outdir.mkdir(parents=True, exist_ok=True)
-
-        logging.debug(
-            f"Output directory for {sex} samples generated at {str(sex_outdir)}"
-        )
-
-        # Extract the sex-separated normal BAMs for the given sex from the dictionary
-        sex_normal_bams = sex_separated_normal_bams[sex]
-
-        # Initialise a list to store coverage files for this sex
-        sex_normal_coverage_files = []
-
-        # Make a directory for coverage files, if it does not exist
-        coverage_file_dir = sex_outdir / "coverage_files"
-        coverage_file_dir.mkdir(parents=True, exist_ok=True)
-
-        # Loop through the normal sample BAMs for this sex
-        for sample_bam in sex_normal_bams:
-            # Run cnvkit.py coverage for this sample on target regions
-            sample_target_coverage_file = run_cnvkit_coverage(
-                sample_bam, targets_bed, coverage_file_dir
-            )
-
-            # Run cnvkit.py coverage for this sample on antitarget regions
-            sample_antitarget_coverage_file = run_cnvkit_coverage(
-                sample_bam, antitargets_bed, coverage_file_dir
-            )
-
-            # Append the coverage files for this sample to the list
-            sex_normal_coverage_files.extend(
-                [sample_target_coverage_file, sample_antitarget_coverage_file]
-            )
-
-        logging.debug(f"Coverage files for {sex} samples: {sex_normal_coverage_files}")
-
-        # Perform pairwise normal vs. normal comparisons to filter coverage files
-        logging.info(f"Performing normal vs. normal comparisons for {sex} samples ...")
-
-        # Make a directory for the normal vs. normal comparisons, if it does not exist yet
-        normal_vs_normal_dir = sex_outdir / "normal_vs_normal"
-        normal_vs_normal_dir.mkdir(parents=True, exist_ok=True)
-
-        logging.debug(
-            f"Normal vs. normal comparison directory for {sex} samples generated at {str(normal_vs_normal_dir)}"
-        )
-
-        # Perform normal vs. normal comparisons to produce a list of filtered coverage files
-        logging.info(
-            "Performing normal vs. normal comparisons to filter out potentially spurious coverage files ..."
-        )
-
-        filtered_coverage_files = perform_normal_vs_normal_comparisons(
-            sex_normal_coverage_files,
+    # For each sex, generate one copy number reference.
+    for sex in ("male", "female"):
+        if sex not in sex_separated_normal_bams:
+            logging.info(f"No {sex} samples available, skipping reference generation.")
+            continue
+        generate_reference_for_sex(
+            sex,
+            sex_separated_normal_bams[sex],
+            outdir,
             reference_fasta,
+            targets_bed,
+            antitargets_bed,
             sample_metadata_xlsx,
-            normal_vs_normal_dir,
-        )
-
-        logging.debug(f"Filtered coverage files: {filtered_coverage_files}")
-
-        # Create a file containing samples that made it into the final reference
-        used_samples_file_name = "samples_used_in_reference.txt"
-        used_samples_file_path = sex_outdir / used_samples_file_name
-
-        samples_used_in_reference_list = get_sample_ids_for_file_list(
-            filtered_coverage_files
-        )
-
-        with open(used_samples_file_path, "w") as f:
-            f.writelines(samples_used_in_reference_list)
-
-        # Run CNVKit reference to create a new copy number reference using the filtered coverage files
-        logging.info(
-            f"Generating a copy number reference for {sex} samples using the filtered coverage files ..."
-        )
-
-        sex_copy_number_reference_file = run_cnvkit_reference(
-            coverage_files=filtered_coverage_files,
-            reference_fasta=reference_fasta,
-            output_prefix=sex,
-            outdir=sex_outdir,
-            sex=sex,
-        )
-
-        logging.debug(
-            f"Copy number reference for {sex} generated at {str(sex_copy_number_reference_file)}"
         )
 
 
