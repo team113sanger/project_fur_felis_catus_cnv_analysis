@@ -45,11 +45,15 @@ def reclassify_unknown_samples(
     targets_bed: Path,
     antitargets_bed: Path,
     outdir: Path,
-):
+) -> dict:
     """
-    For any samples initially marked as 'unknown' (from metadata Excel), generate
-    coverage files and use run_cnvkit_sex to determine their sex. The sample
-    is then added to the appropriate 'male' or 'female' group.
+    For any samples initially marked as 'unknown' (from metadata), generate
+    coverage files and use run_cnvkit_sex to determine their sex. Each sample's
+    assignment is recorded in a file in the unknown directory, and the sample
+    is added to the appropriate 'male' or 'female' group.
+
+    Returns:
+        dict: The updated dictionary grouping samples by sex.
     """
     if "unknown" not in sex_separated_normal_bams:
         return sex_separated_normal_bams
@@ -59,6 +63,9 @@ def reclassify_unknown_samples(
     unknown_cov_dir = unknown_dir / "coverage_files"
     unknown_cov_dir.mkdir(parents=True, exist_ok=True)
 
+    # Dictionary to store assigned sexes for unknown samples.
+    unknown_assignments = {}
+
     for sample_bam in unknown_samples:
         logging.info(f"Reclassifying sample {sample_bam} with unknown sex ...")
         target_cov = run_cnvkit_coverage(sample_bam, targets_bed, unknown_cov_dir)
@@ -67,12 +74,20 @@ def reclassify_unknown_samples(
         )
         determined_sex = run_cnvkit_sex([target_cov, antitarget_cov])
         logging.info(f"Determined sex for sample {sample_bam}: {determined_sex}")
+        unknown_assignments[sample_bam.name] = determined_sex
         if determined_sex in ("male", "female"):
             sex_separated_normal_bams.setdefault(determined_sex, []).append(sample_bam)
         else:
             logging.warning(
                 f"Sample {sample_bam} remains unknown after reclassification."
             )
+
+    # Write the assignments to a file in the unknown directory.
+    assignments_file = unknown_dir / "unknown_assigned_sexes.txt"
+    with assignments_file.open("w") as f:
+        for sample_name, assigned_sex in unknown_assignments.items():
+            f.write(f"{sample_name}\t{assigned_sex}\n")
+    logging.info(f"Unknown sample assignments written to {assignments_file}")
 
     return sex_separated_normal_bams
 
