@@ -55,13 +55,15 @@ ENV \
     PIPX_BIN_DIR="${OPT_DIRECTORY}/pipx/bin" \
     POETRY_CACHE_DIR="${OPT_DIRECTORY}/poetry-cache" \
     PROJECT_DIRECTORY="${OPT_DIRECTORY}/repo" \
-    LOGGING_DIRECTORY="${DATA_DIRECTORY}/logs"
+    LOGGING_DIRECTORY="${DATA_DIRECTORY}/logs" \
+    R_LIBS_USER="${OPT_DIRECTORY}/r-libs"
 
 ENV PATH=${POETRY_HOME}/bin:${PIPX_BIN_DIR}:${PATH}
+ENV R_LIBS="${R_LIBS_USER}:/usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library"
 
 RUN \
     useradd "${USER_NAME}" --shell /bin/bash --create-home --home-dir "${USER_DIRECTORY}" \
-    && mkdir -p "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${OPT_DIRECTORY}" "${POETRY_CACHE_DIR}" "${PIPX_HOME}" "${POETRY_HOME}" "${VENV_DIRECTORY}" "${PIPX_BIN_DIR}"\
+    && mkdir -p "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${OPT_DIRECTORY}" "${POETRY_CACHE_DIR}" "${PIPX_HOME}" "${POETRY_HOME}" "${VENV_DIRECTORY}" "${PIPX_BIN_DIR}" "${R_LIBS_USER}" \
     && chown -R "${USER_NAME}:${USER_NAME}" "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${USER_DIRECTORY}" "${OPT_DIRECTORY}" \
     && chmod -R 755 "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${USER_DIRECTORY}" "${OPT_DIRECTORY}"
 
@@ -147,7 +149,8 @@ RUN \
     Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo "Got $(Rscript -e "packageVersion('ComplexHeatmap')") instead of ${COMPLEXHEATMAP_VERSION}}" && exit 1) && \
     Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
     Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1) && \
-    Rscript -e "install.packages(c('optparse','tidyverse','circlize'), repos='https://cloud.r-project.org')"
+    Rscript -e "install.packages(c('optparse','tidyverse','circlize'), repos='https://cloud.r-project.org, dependencies=TRUE')" && \
+    chown -R "${USER_NAME}:${USER_NAME}" "${R_LIBS_USER}"
 
 
 
