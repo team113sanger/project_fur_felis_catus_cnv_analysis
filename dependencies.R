@@ -34,7 +34,8 @@ PACKAGES <- c(
     "optparse",
     "dplyr",
     "tidyr",
-    "circlize"
+    "circlize",
+    "randomcoloR"
 )
 
 #########################################################################
