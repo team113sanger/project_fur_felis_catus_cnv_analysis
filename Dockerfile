@@ -42,8 +42,7 @@ ENV \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_VIRTUALENVS_IN_PROJECT=false \
     BIOCONDUCTOR_VERSION="3.16" \
-    DNACOPY_VERSION="1.72" \
-    COMPLEXHEATMAP_VERSION="2.14"
+    PKGTYPE="binary"
 
 ENV \
     USER_BASHRC="${USER_DIRECTORY}/.bashrc" \
@@ -92,6 +91,7 @@ RUN \
     apt-get update --quiet && \
     apt-get install --yes --quiet --no-install-recommends \
     build-essential \
+    libcurl4-openssl-dev \
     pkg-config \
     "python${PYTHON_VERSION:?}" \
     "python${PYTHON_VERSION:?}-venv" \
@@ -138,20 +138,10 @@ RUN \
     && R --version | grep ${R_VERSION:?}
 
 # Install R packages
-#
-# To use an older Bioconductor version, we need to specify the version of the
-# Bioconductor and the version of the R packages we want to install. Ask is set
-# to FALSE to avoid user input.
-RUN \
-    Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')" && \
-    Rscript -e "BiocManager::install(version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "BiocManager::install('ComplexHeatmap', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo "Got $(Rscript -e "packageVersion('ComplexHeatmap')") instead of ${COMPLEXHEATMAP_VERSION}}" && exit 1) && \
-    Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1) && \
-    Rscript -e "install.packages(c('optparse','tidyverse','circlize'), repos='https://cloud.r-project.org, dependencies=TRUE')" && \
-    chown -R "${USER_NAME}:${USER_NAME}" "${R_LIBS_USER}"
 
+WORKDIR ${PROJECT_DIRECTORY}
+COPY --chown=${USER_NAME}:${USER_NAME} dependencies.R .
+RUN Rscript dependencies.R
 
 
 # As the non-root user we install pipx and poetry so that they are available in
@@ -187,7 +177,7 @@ ENV \
 WORKDIR $PROJECT_DIRECTORY
 COPY --chown="${USER_NAME}:${USER_NAME}" [".gitignore", "pyproject.toml", "poetry.loc[k]", "./"]
 RUN \
-    poetry install --no-root --no-directory  \
+    poetry install --no-root --no-directory \
     && chown -R "${USER_NAME}:${USER_NAME}" ${VENV_DIRECTORY}
 
 # Copy the src, test and other code of the project into the container.
