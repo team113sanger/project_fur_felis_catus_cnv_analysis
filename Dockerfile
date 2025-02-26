@@ -149,7 +149,7 @@ RUN \
     Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo "Got $(Rscript -e "packageVersion('ComplexHeatmap')") instead of ${COMPLEXHEATMAP_VERSION}}" && exit 1) && \
     Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
     Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1) && \
-    Rscript -e "install.packages(c('optparse','tidyverse','circlize'), repos='https://cloud.r-project.org', dependencies=TRUE)" && \
+    Rscript -e "install.packages(c('optparse','ggplot2','dplyr','tidyr','circlize'), repos='https://cloud.r-project.org', dependencies=TRUE, lib=Sys.getenv('R_LIBS_USER'))" && \
     chown -R "${USER_NAME}:${USER_NAME}" "${R_LIBS_USER}"
 
 
