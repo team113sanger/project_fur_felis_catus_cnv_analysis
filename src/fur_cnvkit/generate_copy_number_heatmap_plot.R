@@ -2,7 +2,9 @@
 
 # Load necessary libraries
 library(optparse)
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
 library(ComplexHeatmap)
 library(circlize)
 
