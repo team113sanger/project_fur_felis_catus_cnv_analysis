@@ -548,7 +548,7 @@ def run_cnvkit_coverage(bam_file: Path, interval_bed: Path, outdir: Path) -> Pat
     if skip_file_generation(output_file_path, validator=is_valid_coverage_file):
         return output_file_path
 
-    cmd = f"cnvkit.py coverage {str(bam_file)} {str(interval_bed)} -o {str(output_file_path)}"
+    cmd = f"cnvkit.py coverage {str(bam_file)} {str(interval_bed)} -o {str(output_file_path)} --processes"
     run_command(cmd)
 
     return output_file_path
