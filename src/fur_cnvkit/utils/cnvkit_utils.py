@@ -756,7 +756,8 @@ def run_cnvkit_batch(
         "-m hybrid "
         "--drop-low-coverage "
         f"--reference {str(copy_number_reference_file)} "
-        f"--output-dir {str(outdir)}"
+        f"--output-dir {str(outdir)} "
+        "--processes"
     )
 
     # If the sample sex is male, add the male reference option.
