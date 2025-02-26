@@ -328,18 +328,19 @@ def generate_genemetrics_study_summary_csv(
     genemetrics_files: t.List[Path],
     baitset_genes_file: Path,
     outdir: Path,
-) -> Path:
+) -> pd.DataFrame:
     """
     Generate a study-level CSV summarizing genemetrics data.
 
     Steps:
       - Read baitset gene symbols.
       - Process each sample's genemetrics file to extract gene-level log2 data.
+      - Aggregate duplicate gene entries by computing the mean.
       - Concatenate all sample data into a cohort-level DataFrame.
       - Save the DataFrame as a CSV.
 
     Returns:
-      The path to the generated summary CSV.
+      The cohort DataFrame.
     """
     logging.info(f"Generating study summary CSV for study {study_id} ...")
     output_csv_file_name = f"{study_id}.genemetrics_study_summary.csv"
@@ -361,15 +362,23 @@ def generate_genemetrics_study_summary_csv(
         logging.info(f"Processing genemetrics file for sample {sample_id} ...")
         df_temp = pd.read_csv(genemetrics_file, sep="\t", usecols=[0, 4])
         logging.debug(f"Initial data for sample {sample_id}:\n{df_temp.head()}")
+
+        # Filter out unwanted labels.
         df_temp = df_temp[~df_temp["gene"].isin(skip_labels)]
+        # Convert log2 values to numeric.
         df_temp["log2"] = pd.to_numeric(df_temp["log2"], errors="coerce")
+        # Aggregate duplicate gene entries by taking the mean.
+        df_temp = df_temp.groupby("gene", as_index=False).mean()
+        # Set the gene column as the index.
         df_temp.set_index("gene", inplace=True)
+        # Reindex the DataFrame based on the baitset gene list.
         df_temp = df_temp.reindex(baitset_genes_list)
+        # Rename the log2 column series to the sample_id.
         s = df_temp["log2"].rename(sample_id)
         sample_series_list.append(s)
 
-    # Concatenate sample Series into a cohort DataFrame.
-    cohort_df = pd.concat(sample_series_list, axis=1).T  # Samples are rows.
+    # Concatenate sample Series into a cohort DataFrame (samples are rows).
+    cohort_df = pd.concat(sample_series_list, axis=1).T
     cohort_df.to_csv(output_csv_file_path)
     logging.info(f"Study summary CSV created at {output_csv_file_path}")
     return cohort_df
