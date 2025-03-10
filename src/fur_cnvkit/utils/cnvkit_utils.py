@@ -1015,17 +1015,27 @@ def filter_unplaced_contigs_from_cnvkit_output_file(
     with cnvkit_output_file.open() as f:
         lines = f.readlines()
 
-    filtered_lines = [
+    # Filter out all lines starting with user-defined unplaced contig prefixes
+    prefix_filtered_lines = [
         line
         for line in lines
         if not any(line.startswith(contig) for contig in unplaced_contigs)
     ]
 
+    # Also filter out sequences that end with common unplaced contig suffixes
+    suffix_filtered_lines = [
+        line
+        for line in prefix_filtered_lines
+        if not line.split("\t")[0].endswith(
+            ("decoy", "random", "alt", "hap", "unplaced", "unlocalized", "patch")
+        )
+    ]
+
     with cnvkit_output_file.open("w") as f:
-        f.writelines(filtered_lines)
+        f.writelines(suffix_filtered_lines)
 
     logger.info(
-        f"Unplaced contigs removed from {str(cnvkit_output_file)}. Filtered {len(lines) - len(filtered_lines)} lines. Output saved to {str(cnvkit_output_file)}"
+        f"Unplaced contigs removed from {str(cnvkit_output_file)}. Filtered {len(lines) - len(suffix_filtered_lines)} lines. Output saved to {str(cnvkit_output_file)}"
     )
 
 
