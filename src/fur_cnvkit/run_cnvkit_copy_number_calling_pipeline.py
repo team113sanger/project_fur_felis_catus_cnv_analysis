@@ -450,14 +450,21 @@ def process_study(
         study_genemetrics_records += sex_records
 
     # --- MAD Calculation, Plotting, and Filtering ---
-    # Collect all ratio (.cnr) files from the processed samples.
+    # Collect all ratio (.cnr) files and their corresponding segment (.cns) files from the processed samples.
     cnr_files = [
         ratio_file
         for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
     ]
+    cns_files = [
+        ratio_file.with_suffix(".cns")
+        for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
+    ]
     # Run the MAD calculation pipeline which saves the results and generates a plot.
     filtered_sample_ids, mad_df = run_mad_calculation_pipeline(
-        cnr_files, study_outdir, prefix=study_id, top_percent=0.2
+        cnr_files=cnr_files,
+        cns_files=cns_files,
+        outdir=study_outdir,
+        prefix=study_id,
     )
 
     # Filter out high-MAD samples from the study records.
