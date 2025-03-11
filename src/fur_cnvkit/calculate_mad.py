@@ -262,6 +262,7 @@ def run_mad_calculation_pipeline(
       2. Process each .cnr file.
       3. Save the results and generate plots.
       4. Filter out noisy samples based on the modified z-score.
+      5. Write the filtered sample IDs to a file.
     """
     # Build mapping for .cns files.
     cns_mapping = build_cns_mapping(cns_files)
@@ -283,6 +284,14 @@ def run_mad_calculation_pipeline(
     filtered_sample_ids = filter_noisy_samples_by_zscore(
         results_df, metric_col="AdjustedMADMetric", z_threshold=z_threshold
     )
+
+    # Write the filtered sample IDs to a file.
+    filtered_samples_file = outdir / f"{prefix}.mad_filtered_samples.txt"
+    with open(filtered_samples_file, "w") as f:
+        for sample in filtered_sample_ids:
+            f.write(f"{sample}\n")
+    logging.info(f"Filtered sample IDs saved to {filtered_samples_file}")
+
     return filtered_sample_ids, results_df
 
 
