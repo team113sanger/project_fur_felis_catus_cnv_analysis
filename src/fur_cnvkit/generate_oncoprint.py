@@ -56,8 +56,15 @@ def parse_args():
         "--gene_chrom_file",
         type=Path,
         default=None,
-        help="Optional tab-delimited file (no header) with two columns: GENE and CHROMOSOME. "
-        "If provided, only genes found in this file are plotted.",
+        help="Optional tab-delimited file with gene location information. "
+        "If provided, the file should have either two columns (Gene, Chromosome) or five columns "
+        "(Gene, Ensembl, Chromosome, Start, End). Only genes found in this file are plotted.",
+    )
+    parser.add_argument(
+        "--gene_sort",
+        choices=["alterations", "position"],
+        default="alterations",
+        help="Sort genes on the x-axis by number of alterations (alterations) or by genomic position (position).",
     )
     return parser.parse_args()
 
@@ -71,20 +78,39 @@ def read_data(maf_file: Path, cnv_file: Path) -> Tuple[pd.DataFrame, pd.DataFram
 
 def build_gene_chrom_dict(
     somatic_mutations_data: pd.DataFrame, gene_chrom_file: Optional[Path]
-) -> Dict[str, str]:
-    """Builds a gene-to-chromosome dictionary using a file if provided."""
+) -> Tuple[Dict[str, str], Optional[pd.DataFrame]]:
+    """
+    Builds a gene-to-chromosome mapping.
+    If gene_chrom_file is provided and contains location information (5 columns), it returns:
+      - a dictionary mapping gene to chromosome (for plotting), and
+      - a DataFrame with gene location info (used for sorting by genomic position).
+    Otherwise, it falls back to using the MAF file.
+    """
+    gene_info_df = None
     if gene_chrom_file is not None:
-        gene_chrom_map = pd.read_csv(
-            gene_chrom_file, sep="\t", header=None, names=["Gene", "Chromosome"]
-        )
-        gene_chrom_dict = gene_chrom_map.set_index("Gene")["Chromosome"].to_dict()
+        try:
+            # Attempt to read a file with location info: Gene, Ensembl, Chromosome, Start, End
+            gene_info_df = pd.read_csv(
+                gene_chrom_file,
+                sep="\t",
+                header=None,
+                names=["Gene", "Ensembl", "Chromosome", "Start", "End"],
+            )
+            gene_info_df.set_index("Gene", inplace=True)
+            gene_chrom_dict = gene_info_df["Chromosome"].to_dict()
+        except Exception:
+            # Fallback if file has only two columns: Gene, Chromosome
+            gene_chrom_map = pd.read_csv(
+                gene_chrom_file, sep="\t", header=None, names=["Gene", "Chromosome"]
+            )
+            gene_chrom_dict = gene_chrom_map.set_index("Gene")["Chromosome"].to_dict()
     else:
         gene_chrom_dict = (
             somatic_mutations_data.groupby("Hugo_Symbol")["Chromosome"]
             .first()
             .to_dict()
         )
-    return gene_chrom_dict
+    return gene_chrom_dict, gene_info_df
 
 
 def get_recurrent_genes(
@@ -203,7 +229,6 @@ def draw_alteration_cell(ax, gene_index: int, sample_index: int, value: int) -> 
     Uses a mapping: 1 -> CNA gain (lightpink), -1 -> CNA loss (lightblue),
     2 -> mutation only (star), 3 -> gain + mutation, -3 -> loss + mutation.
     """
-    # Mapping: value: (rectangle color, marker_flag)
     mapping = {
         1: ("lightpink", False),
         -1: ("lightblue", False),
@@ -315,6 +340,7 @@ def plot_oncoprint(
     plot_height: int,
     plot_width: int,
     output_file: Optional[Path],
+    x_label: str,
 ) -> None:
     """Creates and displays (or saves) the oncoprint plot using helper functions."""
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
@@ -326,7 +352,7 @@ def plot_oncoprint(
     ax.set_title(
         f"Genetic Alterations (Somatic Mutations and Copy Number Variations) in {tumour_type}"
     )
-    ax.set_xlabel("Genes (Ordered by Number of Alterations)")
+    ax.set_xlabel(x_label)
     ax.set_ylabel("Samples")
 
     if output_file:
@@ -375,12 +401,15 @@ def generate_recurrent_gene_oncoprint(
     include_option: int = 2,
     output_file: Optional[Path] = None,
     gene_chrom_file: Optional[Path] = None,
+    gene_sort: str = "alterations",
 ) -> None:
     # Step 1: Read data
     somatic_mutations_data, copy_number_data = read_data(maf_file, cnv_file)
 
-    # Step 1a: Build gene-to-chromosome mapping.
-    gene_chrom_dict = build_gene_chrom_dict(somatic_mutations_data, gene_chrom_file)
+    # Step 1a: Build gene-to-chromosome mapping and gene location info.
+    gene_chrom_dict, gene_info_df = build_gene_chrom_dict(
+        somatic_mutations_data, gene_chrom_file
+    )
 
     # Step 2 & 3: Identify recurrent genes.
     recurrent_genes = get_recurrent_genes(
@@ -398,7 +427,7 @@ def generate_recurrent_gene_oncoprint(
     # Step 5: Align sample order across datasets.
     aligned_cna, aligned_mutations, _ = align_samples(cna_heatmap_data, mutations_pivot)
 
-    # Step 6: Combine the CNV and mutation data.
+    # Step 6: Combine the CNA and mutation data.
     combined_heatmap_data = combine_alterations(aligned_cna, aligned_mutations)
 
     # Step 7: Filter genes based on recurrence post-alignment.
@@ -409,12 +438,35 @@ def generate_recurrent_gene_oncoprint(
         num_recurrent_samples,
         include_option,
     )
-    # Step 8: Order genes by the number of alterations.
+    # Step 8: Order genes.
     ordered_data = order_genes_by_alterations(filtered_data)
+
+    # If gene_sort is 'position', reorder genes based on genomic coordinates.
+    if gene_sort == "position":
+        if gene_info_df is None:
+            raise ValueError(
+                "Genomic position sorting requested but no gene_chrom_file with location info provided."
+            )
+        # Subset gene_info_df to the genes present in ordered_data.
+        gene_info_sub = gene_info_df.loc[ordered_data.columns]
+        # Sort by Chromosome and then by Start coordinate.
+        sorted_genes = gene_info_sub.sort_values(
+            by=["Chromosome", "Start"]
+        ).index.tolist()
+        ordered_data = ordered_data[sorted_genes]
+        x_label = "Genes (Ordered by Genomic Position)"
+    else:
+        x_label = "Genes (Ordered by Number of Alterations)"
 
     # Step 9: Plot the oncoprint.
     plot_oncoprint(
-        ordered_data, gene_chrom_dict, tumour_type, plot_height, plot_width, output_file
+        ordered_data,
+        gene_chrom_dict,
+        tumour_type,
+        plot_height,
+        plot_width,
+        output_file,
+        x_label,
     )
 
 
@@ -430,6 +482,7 @@ def main():
         include_option=args.include_option,
         output_file=args.output_file,
         gene_chrom_file=args.gene_chrom_file,
+        gene_sort=args.gene_sort,
     )
 
 
