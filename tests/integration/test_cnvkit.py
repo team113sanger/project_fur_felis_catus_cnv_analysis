@@ -7,72 +7,16 @@ import pytest
 import importlib.resources
 
 from fur_cnvkit import constants
+from tests import conftest
 
 # Environment variable constants
 ENV_VAR_BAM_DIR = "TEST_BAM_DIR"
 ENV_VAR_BAITSET_DIR = "TEST_BAITSET_DIR"
-ENV_VAR_GENOME_DIR = "TEST_GENOME_DIR"
-ENV_VAR_ANNOTATION_DIR = "TEST_ANNOTATION_DIR"
+
 
 # -------------------------------
-# Fixtures
+# Fixtures are defined in tests/conftest.py
 # -------------------------------
-
-
-@pytest.fixture
-def feline_reference_fasta() -> pathlib.Path:
-    """
-    Returns the path to the reference FASTA file.
-    Skips the test if the file is not found.
-    """
-    raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
-    expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
-    reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
-    if not reference_fasta.exists():
-        pytest.skip(f"Reference FASTA not found: {reference_fasta}")
-    return reference_fasta
-
-
-@pytest.fixture
-def feline_baitset() -> pathlib.Path:
-    """
-    Returns the path to the baitset file.
-    Skips the test if the file is not found.
-    """
-    raw_baitset_dir = os.environ.get(ENV_VAR_BAITSET_DIR, "")
-    expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
-    baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
-    if not baitset.exists():
-        pytest.skip(f"Baitset file not found: {baitset}")
-    return baitset
-
-
-@pytest.fixture
-def feline_refflat_file() -> pathlib.Path:
-    """
-    Returns the path to the refflat file.
-    Skips the test if the file is not found.
-    """
-    raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
-    expected_refflat_file = "refflat.txt"  # Adjust the filename if necessary
-    refflat_file = pathlib.Path(raw_annotation_dir) / expected_refflat_file
-    if not refflat_file.exists():
-        pytest.skip(f"Refflat file not found: {refflat_file}")
-    return refflat_file
-
-
-@pytest.fixture
-def bams() -> list[pathlib.Path]:
-    """
-    Returns a list of BAM files.
-    Skips the test if no BAM files are found.
-    """
-    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
-    bam_dir = pathlib.Path(raw_bam_dir)
-    bam_files = list(bam_dir.glob("**/*.bam"))
-    if not bam_files:
-        pytest.skip("No BAM files found")
-    return bam_files
 
 
 # -------------------------------
@@ -80,24 +24,23 @@ def bams() -> list[pathlib.Path]:
 # -------------------------------
 
 
-def can_find_bams() -> bool:
-    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
-    bam_dir = pathlib.Path(raw_bam_dir)
-    return bool(raw_bam_dir) and bam_dir.exists() and any(bam_dir.glob("**/*.bam"))
-
-
-def can_find_baitset() -> bool:
-    raw_baitset = os.environ.get(ENV_VAR_BAITSET_DIR, "")
-    baitset = pathlib.Path(raw_baitset)
-    return bool(raw_baitset) and baitset.exists() and any(baitset.glob("**/*.bed"))
-
-
 def should_skip_tests() -> bool:
     """
     Returns True if required BAM and baitset files are not found.
     This can be used with @pytest.mark.skipif.
     """
-    return not all([can_find_bams(), can_find_baitset()])
+
+    def _can_find_bams() -> bool:
+        raw_bam_dir = os.environ.get(conftest.ENV_VAR_BAM_DIR, "")
+        bam_dir = pathlib.Path(raw_bam_dir)
+        return bool(raw_bam_dir) and bam_dir.exists() and any(bam_dir.glob("**/*.bam"))
+
+    def _can_find_baitset() -> bool:
+        raw_baitset = os.environ.get(conftest.ENV_VAR_BAITSET_DIR, "")
+        baitset = pathlib.Path(raw_baitset)
+        return bool(raw_baitset) and baitset.exists() and any(baitset.glob("**/*.bed"))
+
+    return not all([_can_find_bams(), _can_find_baitset()])
 
 
 # -------------------------------
