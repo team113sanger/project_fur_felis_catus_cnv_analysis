@@ -8,6 +8,8 @@ them in one place for easy maintenance.
 # The name of the program that appears in the unified CLI entrypoint help message.
 PROGRAM_NAME: str = "fur_cnvkit"
 
+# Pacakged R script
+PACKAGED_R_SCRIPT: str = "generate_copy_number_heatmap_plot.R"
 
 # Command names
 #
