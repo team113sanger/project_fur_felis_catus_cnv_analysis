@@ -9,10 +9,6 @@ import importlib.resources
 from fur_cnvkit import constants
 from tests import conftest
 
-# Environment variable constants
-ENV_VAR_BAM_DIR = "TEST_BAM_DIR"
-ENV_VAR_BAITSET_DIR = "TEST_BAITSET_DIR"
-
 
 # -------------------------------
 # Fixtures are defined in tests/conftest.py
