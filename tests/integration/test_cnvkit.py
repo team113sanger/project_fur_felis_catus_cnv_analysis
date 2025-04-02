@@ -1,96 +1,111 @@
-import shutil
-import pathlib
 import os
+import pathlib
 import subprocess
 import re
-
+import shutil
 import pytest
 
-# CONSTANTS
+# Environment variable constants
 ENV_VAR_BAM_DIR = "TEST_BAM_DIR"
 ENV_VAR_BAITSET_DIR = "TEST_BAITSET_DIR"
 ENV_VAR_GENOME_DIR = "TEST_GENOME_DIR"
 ENV_VAR_ANNOTATION_DIR = "TEST_ANNOTATION_DIR"
 
-# HELPERS
+
+# -------------------------------
+# Fixtures
+# -------------------------------
+
+
+@pytest.fixture
+def feline_reference_fasta() -> pathlib.Path:
+    """
+    Returns the path to the reference FASTA file.
+    Skips the test if the file is not found.
+    """
+    raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
+    expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
+    reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
+    if not reference_fasta.exists():
+        pytest.skip(f"Reference FASTA not found: {reference_fasta}")
+    return reference_fasta
+
+
+@pytest.fixture
+def feline_baitset() -> pathlib.Path:
+    """
+    Returns the path to the baitset file.
+    Skips the test if the file is not found.
+    """
+    raw_baitset_dir = os.environ.get(ENV_VAR_BAITSET_DIR, "")
+    expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
+    baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
+    if not baitset.exists():
+        pytest.skip(f"Baitset file not found: {baitset}")
+    return baitset
+
+
+@pytest.fixture
+def feline_refflat_file() -> pathlib.Path:
+    """
+    Returns the path to the refflat file.
+    Skips the test if the file is not found.
+    """
+    raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
+    expected_refflat_file = "refflat.txt"  # Adjust the filename if necessary
+    refflat_file = pathlib.Path(raw_annotation_dir) / expected_refflat_file
+    if not refflat_file.exists():
+        pytest.skip(f"Refflat file not found: {refflat_file}")
+    return refflat_file
+
+
+@pytest.fixture
+def bams() -> list[pathlib.Path]:
+    """
+    Returns a list of BAM files.
+    Skips the test if no BAM files are found.
+    """
+    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
+    bam_dir = pathlib.Path(raw_bam_dir)
+    bam_files = list(bam_dir.glob("**/*.bam"))
+    if not bam_files:
+        pytest.skip("No BAM files found")
+    return bam_files
+
+
+# -------------------------------
+# Additional helpers to determine if test data is available
+# -------------------------------
 
 
 def can_find_bams() -> bool:
     raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
     bam_dir = pathlib.Path(raw_bam_dir)
-
     return bool(raw_bam_dir) and bam_dir.exists() and any(bam_dir.glob("**/*.bam"))
 
 
 def can_find_baitset() -> bool:
     raw_baitset = os.environ.get(ENV_VAR_BAITSET_DIR, "")
     baitset = pathlib.Path(raw_baitset)
-
     return bool(raw_baitset) and baitset.exists() and any(baitset.glob("**/*.bed"))
 
 
 def should_skip_tests() -> bool:
+    """
+    Returns True if required BAM and baitset files are not found.
+    This can be used with @pytest.mark.skipif.
+    """
     return not all([can_find_bams(), can_find_baitset()])
 
 
-# FIXTURES
-
-
-@pytest.fixture
-def bams() -> list[pathlib.Path]:
-    raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
-    bam_dir = pathlib.Path(raw_bam_dir)
-
-    return list(bam_dir.glob("**/*.bam"))
-
-
-@pytest.fixture
-def feline_baitset() -> pathlib.Path:
-    raw_baitset_dir = os.environ.get(ENV_VAR_BAITSET_DIR, "")
-    expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
-    baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
-    if not baitset.exists():
-        raise FileNotFoundError(f"Could not find baitset at {baitset}")
-    return baitset
-
-
-@pytest.fixture
-def feline_reference_fasta() -> pathlib.Path:
-    raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
-    if not raw_genome_dir:
-        raise ValueError(
-            f"Environment variable {ENV_VAR_GENOME_DIR} is not set or empty."
-        )
-    expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
-    reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
-    if not reference_fasta.exists():
-        raise FileNotFoundError(
-            f"Could not find reference FASTA at {str(reference_fasta)}"
-        )
-    return reference_fasta
-
-
-@pytest.fixture
-def feline_refflat_file() -> pathlib.Path:
-    raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
-    if not raw_annotation_dir:
-        raise ValueError(
-            f"Environment variable {ENV_VAR_ANNOTATION_DIR} is not set or empty."
-        )
-    refflat_dir = pathlib.Path(raw_annotation_dir).resolve() / "refFlat_files"
-    expected_refflat_file = "Felis_catus.Felis_catus_9.0.104.refFlat.txt"
-    refflat_file = refflat_dir / expected_refflat_file
-    if not refflat_file.exists():
-        raise FileNotFoundError(f"Could not find refFlat file at {str(refflat_file)}")
-    return refflat_file
-
-
-# TESTS
+# -------------------------------
+# Test functions
+# -------------------------------
 
 
 def test_cnvkit_is_installed():
     program = "cnvkit.py"
-    assert bool(shutil.which(program))
+    assert bool(shutil.which(program)), "cnvkit.py is not installed or not in PATH"
 
 
 def test_cnvkit_version_is_expected():
@@ -102,7 +117,9 @@ def test_cnvkit_version_is_expected():
     version = subprocess.check_output(cmd, shell=True).decode().strip()
 
     # Then
-    assert version == expected_version
+    assert (
+        version == expected_version
+    ), f"Expected version {expected_version}, got {version}"
 
 
 @pytest.mark.skipif(should_skip_tests(), reason="No test data found")
@@ -129,7 +146,12 @@ def test_cnvkit_runs__numpy_regression(
     ]
     numpy_error_pattern = r"np\.asfarray.*was removed in the NumPy 2\.0 release"
 
-    cmd = f"cnvkit.py autobin -f {feline_reference_fasta} -m {method} -t {feline_baitset} --annotate {feline_refflat_file} --target-output-bed {expected_output_target_bed} --antitarget-output-bed {expected_output_antitarget_bed} {' '.join([str(bam) for bam in bams])}"
+    cmd = (
+        f"cnvkit.py autobin -f {feline_reference_fasta} -m {method} -t {feline_baitset} "
+        f"--annotate {feline_refflat_file} --target-output-bed {expected_output_target_bed} "
+        f"--antitarget-output-bed {expected_output_antitarget_bed} "
+        f"{' '.join(str(bam) for bam in bams)}"
+    )
 
     # When
     subprocess_result = subprocess.run(
@@ -137,11 +159,19 @@ def test_cnvkit_runs__numpy_regression(
     )
 
     # Then
-    assert subprocess_result.returncode == 0
-    assert pathlib.Path(expected_output_target_bed).exists()
-    assert pathlib.Path(expected_output_antitarget_bed).exists()
-    for line in expected_stderr_substrings:
-        assert line in subprocess_result.stderr
+    assert (
+        subprocess_result.returncode == 0
+    ), f"Command failed: {subprocess_result.stderr}"
+    assert (
+        expected_output_target_bed.exists()
+    ), f"Target bed file not created: {expected_output_target_bed}"
+    assert (
+        expected_output_antitarget_bed.exists()
+    ), f"Antitarget bed file not created: {expected_output_antitarget_bed}"
+    for substring in expected_stderr_substrings:
+        assert (
+            substring in subprocess_result.stderr
+        ), f"Expected '{substring}' in stderr"
     assert not re.search(
         numpy_error_pattern, subprocess_result.stderr
     ), f"Detected numpy asfarray error: {subprocess_result.stderr}"
@@ -166,9 +196,54 @@ def test_cnvkit_runs__target(feline_baitset: pathlib.Path, tmp_path: pathlib.Pat
     )
 
     # Then
-    assert subprocess_result.returncode == 0
-    for line in expected_stderr_substrings:
-        assert line in subprocess_result.stderr
-    assert output_file.exists()
+    assert (
+        subprocess_result.returncode == 0
+    ), f"Command failed: {subprocess_result.stderr}"
+    for substring in expected_stderr_substrings:
+        assert (
+            substring in subprocess_result.stderr
+        ), f"Expected '{substring}' in stderr"
+    assert output_file.exists(), f"Output file not created: {output_file}"
     actual_first_line = output_file.read_text().strip().split("\n")[0]
-    assert actual_first_line == expected_first_line
+    assert (
+        actual_first_line == expected_first_line
+    ), f"Expected first line '{expected_first_line}', got '{actual_first_line}'"
+
+
+def test_is_R_installed():
+    # Given
+    programs = ["R", "Rscript"]
+
+    # When
+    is_installed = all(bool(shutil.which(program)) for program in programs)
+
+    # Then
+    assert is_installed, "R or Rscript is not installed or not in PATH"
+
+
+def test_is_DNACopy_a_findable_R_package():
+    # Given
+    from fur_cnvkit.utils import cnvkit_utils
+
+    package = "DNAcopy"
+
+    # When
+    actually_exists = cnvkit_utils.is_R_package_installed(package)
+
+    # Then
+    err_msg = f"The R package {package!r} cannot be found. Is it installed? Are the paths correct?"
+    assert actually_exists, err_msg
+
+
+def test_is_ComplexHeatmap_a_findable_R_package():
+    # Given
+    from fur_cnvkit.utils import cnvkit_utils
+
+    package = "ComplexHeatmap"
+
+    # When
+    actually_exists = cnvkit_utils.is_R_package_installed(package)
+
+    # Then
+    err_msg = f"The R package {package!r} cannot be found. Is it installed? Are the paths correct?"
+    assert actually_exists, err_msg

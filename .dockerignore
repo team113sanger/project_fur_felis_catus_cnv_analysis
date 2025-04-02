@@ -73,3 +73,5 @@ node_modules/
 
 # Ignore dot env
 *.env
+analysis/*
+2025_02_18_results/*

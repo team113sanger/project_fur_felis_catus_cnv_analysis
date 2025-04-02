@@ -42,8 +42,7 @@ ENV \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_VIRTUALENVS_IN_PROJECT=false \
     BIOCONDUCTOR_VERSION="3.16" \
-    DNACOPY_VERSION="1.72" \
-    COMPLEXHEATMAP_VERSION="2.14"
+    PKGTYPE="binary"
 
 ENV \
     USER_BASHRC="${USER_DIRECTORY}/.bashrc" \
@@ -55,13 +54,15 @@ ENV \
     PIPX_BIN_DIR="${OPT_DIRECTORY}/pipx/bin" \
     POETRY_CACHE_DIR="${OPT_DIRECTORY}/poetry-cache" \
     PROJECT_DIRECTORY="${OPT_DIRECTORY}/repo" \
-    LOGGING_DIRECTORY="${DATA_DIRECTORY}/logs"
+    LOGGING_DIRECTORY="${DATA_DIRECTORY}/logs" \
+    R_LIBS_USER="${OPT_DIRECTORY}/r-libs"
 
 ENV PATH=${POETRY_HOME}/bin:${PIPX_BIN_DIR}:${PATH}
+ENV R_LIBS="${R_LIBS_USER}:/usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library"
 
 RUN \
     useradd "${USER_NAME}" --shell /bin/bash --create-home --home-dir "${USER_DIRECTORY}" \
-    && mkdir -p "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${OPT_DIRECTORY}" "${POETRY_CACHE_DIR}" "${PIPX_HOME}" "${POETRY_HOME}" "${VENV_DIRECTORY}" "${PIPX_BIN_DIR}"\
+    && mkdir -p "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${OPT_DIRECTORY}" "${POETRY_CACHE_DIR}" "${PIPX_HOME}" "${POETRY_HOME}" "${VENV_DIRECTORY}" "${PIPX_BIN_DIR}" "${R_LIBS_USER}" \
     && chown -R "${USER_NAME}:${USER_NAME}" "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${USER_DIRECTORY}" "${OPT_DIRECTORY}" \
     && chmod -R 755 "${PROJECT_DIRECTORY}" "${DATA_DIRECTORY}" "${USER_DIRECTORY}" "${OPT_DIRECTORY}"
 
@@ -90,6 +91,7 @@ RUN \
     apt-get update --quiet && \
     apt-get install --yes --quiet --no-install-recommends \
     build-essential \
+    libcurl4-openssl-dev \
     pkg-config \
     "python${PYTHON_VERSION:?}" \
     "python${PYTHON_VERSION:?}-venv" \
@@ -136,17 +138,10 @@ RUN \
     && R --version | grep ${R_VERSION:?}
 
 # Install R packages
-#
-# To use an older Bioconductor version, we need to specify the version of the
-# Bioconductor and the version of the R packages we want to install. Ask is set
-# to FALSE to avoid user input.
-RUN \
-    Rscript -e "if (!requireNamespace('BiocManager', quietly = TRUE)) install.packages('BiocManager', repos='https://cloud.r-project.org')" && \
-    Rscript -e "BiocManager::install(version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "BiocManager::install('ComplexHeatmap', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "packageVersion('ComplexHeatmap')" | grep -q "${COMPLEXHEATMAP_VERSION}" || (echo "Got $(Rscript -e "packageVersion('ComplexHeatmap')") instead of ${COMPLEXHEATMAP_VERSION}}" && exit 1) && \
-    Rscript -e "BiocManager::install('DNAcopy', version = '${BIOCONDUCTOR_VERSION:?}', ask = FALSE)" && \
-    Rscript -e "packageVersion('DNAcopy')" | grep -q "${DNACOPY_VERSION}" || (echo "Got $(Rscript -e "packageVersion('DNAcopy')") instead of ${DNACOPY_VERSION}" && exit 1)
+
+WORKDIR ${PROJECT_DIRECTORY}
+COPY --chown=${USER_NAME}:${USER_NAME} dependencies.R .
+RUN Rscript dependencies.R
 
 
 # As the non-root user we install pipx and poetry so that they are available in
@@ -182,7 +177,7 @@ ENV \
 WORKDIR $PROJECT_DIRECTORY
 COPY --chown="${USER_NAME}:${USER_NAME}" [".gitignore", "pyproject.toml", "poetry.loc[k]", "./"]
 RUN \
-    poetry install --no-root --no-directory  \
+    poetry install --no-root --no-directory \
     && chown -R "${USER_NAME}:${USER_NAME}" ${VENV_DIRECTORY}
 
 # Copy the src, test and other code of the project into the container.
