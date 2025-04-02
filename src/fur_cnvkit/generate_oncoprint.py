@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import typing as t
 import argparse
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -8,16 +9,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+from fur_cnvkit import constants
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
 # Set up logging
+COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_ONCOPRINT
 logger = get_package_logger()
 
 
-def get_argparser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Generate an oncoprint figure showing recurrent somatic mutations and CNVs across samples."
-    )
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
+    """
+    Either returns a new ArgumentParser instance or a subparser for the
+    generate_oncoprint command.
+
+    It is preferrable to use the subparser argument as it unifies the CLI to a
+    single entrypoint. To preserve backwards compatibility, the function can
+    also be called without the subparser argument.
+    """
+    if subparser is None:
+        parser = argparse.ArgumentParser(
+            description=constants.DESCRIPTION__GENERATE_ONCOPRINT
+        )
+    else:
+        parser = subparser.add_parser(
+            COMMAND_NAME,
+            description=constants.DESCRIPTION__GENERATE_ONCOPRINT,
+            help=constants.SHORT_HELP__GENERATE_ONCOPRINT,
+        )
+
     parser.add_argument(
         "maf_file",
         type=Path,

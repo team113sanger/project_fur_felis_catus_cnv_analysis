@@ -8,19 +8,38 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from fur_cnvkit import constants
 from fur_cnvkit.utils.fur_utils import get_sample_id_from_file_path
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
+
+# Constants
+COMMAND_NAME: str = constants.COMMAND_NAME__CALCULATE_MAD
 
 logger = get_package_logger()
 
 
-def get_argparser() -> argparse.ArgumentParser:
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Parse command-line arguments.
+    Either returns a new ArgumentParser instance or a subparser for the
+    calculate_mad command.
+
+    It is preferrable to use the subparser argument as it unifies the CLI to a
+    single entrypoint. To preserve backwards compatibility, the function can
+    also be called without the subparser argument.
     """
-    parser = argparse.ArgumentParser(
-        description="Run MAD calculation pipeline on CNVkit files."
-    )
+    if subparser is None:
+        parser = argparse.ArgumentParser(
+            description=constants.DESCRIPTION__CALCULATE_MAD
+        )
+    else:
+        parser = subparser.add_parser(
+            COMMAND_NAME,
+            description=constants.DESCRIPTION__CALCULATE_MAD,
+            help=constants.SHORT_HELP__CALCULATE_MAD,
+        )
+
     parser.add_argument(
         "--cnr_files",
         nargs="+",

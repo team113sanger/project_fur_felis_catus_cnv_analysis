@@ -2,6 +2,7 @@ import typing as t
 import argparse
 from pathlib import Path
 
+from fur_cnvkit import constants
 from fur_cnvkit.normal_vs_normal import perform_normal_vs_normal_comparisons
 from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_coverage,
@@ -15,17 +16,35 @@ from fur_cnvkit.utils.fur_utils import (
 )
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
+# Constants
+COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_CN_REFERENCE
+
 # Set up logging
 logger = get_package_logger()
 
 
-def get_argparser() -> argparse.ArgumentParser:
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Create an argument parser for the script.
+    Either returns a new ArgumentParser instance or a subparser for the
+    generate_copy_number_reference command.
 
-    Returns:
-        argparse.ArgumentParser: The argument parser object.
+    It is preferrable to use the subparser argument as it unifies the CLI to a
+    single entrypoint. To preserve backwards compatibility, the function can
+    also be called without the subparser argument.
     """
+    if subparser is None:
+        parser = argparse.ArgumentParser(
+            description=constants.DESCRIPTION__GENERATE_CN_REFERENCE
+        )
+    else:
+        parser = subparser.add_parser(
+            COMMAND_NAME,
+            description=constants.DESCRIPTION__GENERATE_CN_REFERENCE,
+            help=constants.SHORT_HELP__GENERATE_CN_REFERENCE,
+        )
+
     parser = argparse.ArgumentParser(
         description="Generate a copy number reference file for a given cohort of samples."
     )

@@ -4,6 +4,7 @@ import typing as t
 
 import pandas as pd
 
+from fur_cnvkit import constants
 from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_parameter_json,
     get_sample_id_from_file_path,
@@ -25,16 +26,32 @@ from fur_cnvkit.calculate_mad import run_mad_calculation_pipeline
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
 # Set up logging
+COMMAND_NAME: str = constants.COMMAND_NAME__RUN_CNVKIT_CN_CALLING_PIPELINE
 logger = get_package_logger()
 
 
-def get_argparser() -> argparse.ArgumentParser:
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Define and parse command line arguments for the CNVkit pipeline.
+    Either returns a new ArgumentParser instance or a subparser for the
+    run_cnvkit_copy_number_calling_pipeline command.
 
-    Returns:
-        argparse.ArgumentParser: Argument parser object.
+    It is preferrable to use the subparser argument as it unifies the CLI to a
+    single entrypoint. To preserve backwards compatibility, the function can
+    also be called without the subparser argument.
     """
+    if subparser is None:
+        parser = argparse.ArgumentParser(
+            description=constants.DESCRIPTION__RUN_CNVKIT_CN_CALLING_PIPELINE
+        )
+    else:
+        parser = subparser.add_parser(
+            COMMAND_NAME,
+            description=constants.DESCRIPTION__RUN_CNVKIT_CN_CALLING_PIPELINE,
+            help=constants.SHORT_HELP__RUN_CNVKIT_CN_CALLING_PIPELINE,
+        )
+
     parser = argparse.ArgumentParser(
         description="Run the CNVkit copy number calling pipeline."
     )

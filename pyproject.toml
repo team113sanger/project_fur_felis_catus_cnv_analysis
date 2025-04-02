@@ -35,6 +35,7 @@ seaborn = "^0.13.2"
 # - fur_cnvkit is the name of your package, see 'tool.poetry.packages' above
 # - my_subpackage is the name of the subpackage, e.g. 'scripts' or 'entrypoints'
 # - my_function_name is the name of the function to be run, e.g. 'do_something' and not 'do_something()' (it should take no arguments)
+fur_cnvkit = "fur_cnvkit.cli:main"
 
 [tool.pytest.ini_options]
 # Pytest setting go here.

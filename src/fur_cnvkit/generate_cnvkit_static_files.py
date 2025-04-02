@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import typing as t
 
+from fur_cnvkit import constants
 from fur_cnvkit.utils.cnvkit_utils import run_cnvkit_access, run_cnvkit_autobin
 from fur_cnvkit.utils.file_format_checker import is_fasta, is_bed, validate_bam_files
 from fur_cnvkit.utils.fur_utils import (
@@ -12,17 +13,34 @@ from fur_cnvkit.utils.fur_utils import (
 
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
+COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_STATIC_FILES
+
 # Set up the logger
 logger = get_package_logger()
 
 
-def get_argparser() -> argparse.ArgumentParser:
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Create an argument parser for the script.
+    Either returns a new ArgumentParser instance or a subparser for the
+    generate_cnvkit_static_files command.
+
+    It is preferrable to use the subparser argument as it unifies the CLI to a
+    single entrypoint. To preserve backwards compatibility, the function can
+    also be called without the subparser argument.
     """
-    parser = argparse.ArgumentParser(
-        description="Generate various CNVKit files needed to run downstream analyses."
-    )
+    if subparser is None:
+        parser = argparse.ArgumentParser(
+            description=constants.DESCRIPTION__GENERATE_STATIC_FILES
+        )
+    else:
+        parser = subparser.add_parser(
+            COMMAND_NAME,
+            description=constants.DESCRIPTION__GENERATE_STATIC_FILES,
+            help=constants.SHORT_HELP__GENERATE_STATIC_FILES,
+        )
+
     parser.add_argument(
         "-b",
         metavar="BAMS",
