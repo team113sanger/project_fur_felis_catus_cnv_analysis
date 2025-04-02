@@ -1,6 +1,5 @@
 import argparse
 import json
-import logging
 from pathlib import Path
 import typing as t
 
@@ -11,14 +10,10 @@ from fur_cnvkit.utils.fur_utils import (
     categorise_files_by_tumour_normal_status,
 )
 
+from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
-def configure_logging():
-    """
-    Define logging configuration
-    """
-    logging.basicConfig(
-        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+# Set up the logger
+logger = get_package_logger()
 
 
 def parse_arguments():
@@ -95,7 +90,7 @@ def parse_arguments():
 
 
 def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
-    logging.info("Generating baitset genes file ...")
+    logger.info("Generating baitset genes file ...")
 
     # Extract a set of baitset genes from the targets BED file
     with open(targets_bed, "r") as f:
@@ -110,7 +105,7 @@ def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
         else:
             unpacked_genes_set.add(gene_string)
 
-    logging.debug(
+    logger.debug(
         f"Detected {len(unpacked_genes_set)} unique genes : {sorted(unpacked_genes_set)}"
     )
 
@@ -125,7 +120,7 @@ def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
         for gene in sorted(unpacked_genes_set):
             f.write(gene + "\n")
 
-    logging.info(f"Baitset genes file saved to {str(baitset_genes_file_path)}")
+    logger.info(f"Baitset genes file saved to {str(baitset_genes_file_path)}")
 
     return baitset_genes_file_path
 
@@ -144,7 +139,7 @@ def generate_parameter_file(
     parameter_file_name: str,
     outdir: Path,
 ) -> Path:
-    logging.info("Generating parameter file containing CNVKit static files...")
+    logger.info("Generating parameter file containing CNVKit static files...")
 
     # Categorise the BAM files based on their tumour/normal status
     tn_status_bam_dict = categorise_files_by_tumour_normal_status(
@@ -173,14 +168,14 @@ def generate_parameter_file(
     output_parameter_file = outdir / f"{parameter_file_name}.parameters.json"
 
     # Write data to output parameter file path
-    logging.info(f"Writing parameter file to {str(output_parameter_file)}")
+    logger.info(f"Writing parameter file to {str(output_parameter_file)}")
     try:
         with output_parameter_file.open("w") as json_file:
             json.dump(parameter_data, json_file, indent=4)
             json_file.write("\n")
-        logging.info("Successfully wrote parameter file.")
+        logger.info("Successfully wrote parameter file.")
     except Exception as e:
-        logging.warning(f"Error writing parameter file: {e}")
+        logger.warning(f"Error writing parameter file: {e}")
         raise
 
     return output_parameter_file
@@ -188,8 +183,8 @@ def generate_parameter_file(
 
 def main():
     # Get command line arguments
-    logging.info("Starting generation of CNVKit static files ...")
-    logging.info("Getting and validating command line arguments...")
+    logger.info("Starting generation of CNVKit static files ...")
+    logger.info("Getting and validating command line arguments...")
     args = parse_arguments()
 
     validated_bams = validate_bam_files(args.b)
@@ -208,24 +203,24 @@ def main():
     parameter_file_name = args.p
     outdir = args.o
 
-    logging.debug(f"BAM files: {validated_bams}")
-    logging.debug(f"Reference FASTA: {reference_fasta}")
-    logging.debug(f"Baitset BED: {baitset_bed}")
-    logging.debug(f"RefFlat file: {refflat_file}")
-    logging.debug(f"Sample metadata Excel spreadsheet: {sample_metadata_xlsx}")
-    logging.debug(f"Outdir: {outdir}")
+    logger.debug(f"BAM files: {validated_bams}")
+    logger.debug(f"Reference FASTA: {reference_fasta}")
+    logger.debug(f"Baitset BED: {baitset_bed}")
+    logger.debug(f"RefFlat file: {refflat_file}")
+    logger.debug(f"Sample metadata Excel spreadsheet: {sample_metadata_xlsx}")
+    logger.debug(f"Outdir: {outdir}")
 
-    logging.info(
+    logger.info(
         "Command line arguments will now be used to generate CNVKit statis files ..."
     )
 
     # Remove any unwanted samples from final BAM list
     if exclude_file:
-        logging.info("Exclude file detected. Filtering normal BAMs...")
+        logger.info("Exclude file detected. Filtering normal BAMs...")
         filtered_bams = remove_unwanted_sample_files(validated_bams, exclude_file)
-        logging.debug(f"Filtered BAM files: {filtered_bams}")
+        logger.debug(f"Filtered BAM files: {filtered_bams}")
     else:
-        logging.info("No exclude file detected. Using unfiltered normal BAMs...")
+        logger.info("No exclude file detected. Using unfiltered normal BAMs...")
         filtered_bams = validated_bams
 
     # Run cnvkit.py access
@@ -255,9 +250,9 @@ def main():
         outdir,
     )
 
-    logging.info("CNVKit static file generation successfully completed.")
+    logger.info("CNVKit static file generation successfully completed.")
 
 
 if __name__ == "__main__":
-    configure_logging()
+    setup_logging()
     main()

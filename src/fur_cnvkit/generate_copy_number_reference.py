@@ -1,5 +1,4 @@
 import argparse
-import logging
 from pathlib import Path
 
 from fur_cnvkit.normal_vs_normal import perform_normal_vs_normal_comparisons
@@ -13,13 +12,10 @@ from fur_cnvkit.utils.fur_utils import (
     split_file_list_by_sample_sex,
     get_sample_ids_for_file_list,
 )
+from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
-
-def configure_logging():
-    """Define logging configuration."""
-    logging.basicConfig(
-        level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+# Set up logging
+logger = get_package_logger()
 
 
 def parse_arguments():
@@ -67,18 +63,18 @@ def reclassify_unknown_samples(
     unknown_assignments = {}
 
     for sample_bam in unknown_samples:
-        logging.info(f"Reclassifying sample {sample_bam} with unknown sex ...")
+        logger.info(f"Reclassifying sample {sample_bam} with unknown sex ...")
         target_cov = run_cnvkit_coverage(sample_bam, targets_bed, unknown_cov_dir)
         antitarget_cov = run_cnvkit_coverage(
             sample_bam, antitargets_bed, unknown_cov_dir
         )
         determined_sex = run_cnvkit_sex([target_cov, antitarget_cov])
-        logging.info(f"Determined sex for sample {sample_bam}: {determined_sex}")
+        logger.info(f"Determined sex for sample {sample_bam}: {determined_sex}")
         unknown_assignments[sample_bam.name] = determined_sex
         if determined_sex in ("male", "female"):
             sex_separated_normal_bams.setdefault(determined_sex, []).append(sample_bam)
         else:
-            logging.warning(
+            logger.warning(
                 f"Sample {sample_bam} remains unknown after reclassification."
             )
 
@@ -87,7 +83,7 @@ def reclassify_unknown_samples(
     with assignments_file.open("w") as f:
         for sample_name, assigned_sex in unknown_assignments.items():
             f.write(f"{sample_name}\t{assigned_sex}\n")
-    logging.info(f"Unknown sample assignments written to {assignments_file}")
+    logger.info(f"Unknown sample assignments written to {assignments_file}")
 
     return sex_separated_normal_bams
 
@@ -105,7 +101,7 @@ def generate_reference_for_sex(
     For a given sex, generate coverage files, perform normal vs. normal comparisons,
     and create a copy number reference using the filtered coverage files.
     """
-    logging.info(f"Running CNVKit reference generation for {sex} samples ...")
+    logger.info(f"Running CNVKit reference generation for {sex} samples ...")
     sex_outdir = outdir / sex
     sex_outdir.mkdir(parents=True, exist_ok=True)
     coverage_file_dir = sex_outdir / "coverage_files"
@@ -114,13 +110,13 @@ def generate_reference_for_sex(
     # Generate coverage files for each sample.
     sex_normal_coverage_files = []
     for sample_bam in sex_normal_bams:
-        logging.info(f"Generating coverage files for sample {sample_bam} ({sex})...")
+        logger.info(f"Generating coverage files for sample {sample_bam} ({sex})...")
         target_cov = run_cnvkit_coverage(sample_bam, targets_bed, coverage_file_dir)
         antitarget_cov = run_cnvkit_coverage(
             sample_bam, antitargets_bed, coverage_file_dir
         )
         sex_normal_coverage_files.extend([target_cov, antitarget_cov])
-    logging.debug(f"Coverage files for {sex} samples: {sex_normal_coverage_files}")
+    logger.debug(f"Coverage files for {sex} samples: {sex_normal_coverage_files}")
 
     # Perform normal vs. normal comparisons to filter the coverage files.
     normal_vs_normal_dir = sex_outdir / "normal_vs_normal"
@@ -131,7 +127,7 @@ def generate_reference_for_sex(
         sample_metadata_xlsx,
         normal_vs_normal_dir,
     )
-    logging.debug(f"Filtered coverage files for {sex}: {filtered_coverage_files}")
+    logger.debug(f"Filtered coverage files for {sex}: {filtered_coverage_files}")
 
     # Record the samples used for the reference.
     used_samples_file_path = sex_outdir / "samples_used_in_reference.txt"
@@ -143,7 +139,7 @@ def generate_reference_for_sex(
             f.write(f"{sample_id}\n")
 
     # Generate the copy number reference.
-    logging.info(f"Generating copy number reference for {sex} samples ...")
+    logger.info(f"Generating copy number reference for {sex} samples ...")
     sex_reference_file = run_cnvkit_reference(
         coverage_files=filtered_coverage_files,
         reference_fasta=reference_fasta,
@@ -151,17 +147,17 @@ def generate_reference_for_sex(
         outdir=sex_outdir,
         sex=sex,
     )
-    logging.debug(f"Reference for {sex} samples generated at: {sex_reference_file}")
+    logger.debug(f"Reference for {sex} samples generated at: {sex_reference_file}")
 
 
 def main():
-    logging.info("Getting command line arguments...")
+    logger.info("Getting command line arguments...")
     args = parse_arguments()
     parameter_file = args.parameter_file
     outdir = args.outdir
 
-    logging.debug(f"Parameter file: {parameter_file}")
-    logging.debug(f"Outdir: {outdir}")
+    logger.debug(f"Parameter file: {parameter_file}")
+    logger.debug(f"Outdir: {outdir}")
 
     # Extract metadata from the parameter file.
     metadata = extract_metadata_files_from_parameter_json(parameter_file)
@@ -172,30 +168,30 @@ def main():
     targets_bed = metadata["targets_bed"]
     antitargets_bed = metadata["antitargets_bed"]
 
-    logging.debug(f"Normal BAMs: {normal_bams}")
-    logging.debug(f"Reference FASTA: {reference_fasta}")
-    logging.debug(f"Baitset BED: {baitset_bed}")
-    logging.debug(f"Sample metadata Excel: {sample_metadata_xlsx}")
-    logging.debug(f"Targets BED: {targets_bed}")
-    logging.debug(f"Antitargets BED: {antitargets_bed}")
+    logger.debug(f"Normal BAMs: {normal_bams}")
+    logger.debug(f"Reference FASTA: {reference_fasta}")
+    logger.debug(f"Baitset BED: {baitset_bed}")
+    logger.debug(f"Sample metadata Excel: {sample_metadata_xlsx}")
+    logger.debug(f"Targets BED: {targets_bed}")
+    logger.debug(f"Antitargets BED: {antitargets_bed}")
 
     # Group normal BAMs by their metadata sex.
-    logging.info("Separating normal BAMs based on their metadata sex ...")
+    logger.info("Separating normal BAMs based on their metadata sex ...")
     sex_separated_normal_bams = split_file_list_by_sample_sex(
         normal_bams, sample_metadata_xlsx
     )
-    logging.debug(f"Initial grouping by sex: {sex_separated_normal_bams}")
+    logger.debug(f"Initial grouping by sex: {sex_separated_normal_bams}")
 
     # Reclassify unknown samples using coverage files.
     sex_separated_normal_bams = reclassify_unknown_samples(
         sex_separated_normal_bams, targets_bed, antitargets_bed, outdir
     )
-    logging.debug(f"Final grouping of samples by sex: {sex_separated_normal_bams}")
+    logger.debug(f"Final grouping of samples by sex: {sex_separated_normal_bams}")
 
     # For each sex, generate one copy number reference.
     for sex in ("male", "female"):
         if sex not in sex_separated_normal_bams:
-            logging.info(f"No {sex} samples available, skipping reference generation.")
+            logger.info(f"No {sex} samples available, skipping reference generation.")
             continue
         generate_reference_for_sex(
             sex,
@@ -209,5 +205,5 @@ def main():
 
 
 if __name__ == "__main__":
-    configure_logging()
+    setup_logging()
     main()
