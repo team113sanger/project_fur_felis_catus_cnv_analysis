@@ -23,7 +23,7 @@ COMMAND_NAME__RUN_CNVKIT_CN_CALLING_PIPELINE: str = "cnvkit_cn_calling_pipeline"
 #
 # Text that appears in the help message that describes a command or the program
 # itself.
-DESCRIPTION__PROGRAM: str = ""
+DESCRIPTION__PROGRAM: str = "FUR CNVkit - a collection commands for CN analysis as part of FUR project that rely on CNVkit."
 DESCRIPTION__CALCULATE_MAD: str = (
     "Run the Median Absolute Deviation (MAD) calculation pipeline on CNVkit files."
 )
