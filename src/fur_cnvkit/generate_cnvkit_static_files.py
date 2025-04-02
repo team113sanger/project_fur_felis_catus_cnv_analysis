@@ -16,7 +16,10 @@ from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 logger = get_package_logger()
 
 
-def parse_arguments():
+def get_argparser() -> argparse.ArgumentParser:
+    """
+    Create an argument parser for the script.
+    """
     parser = argparse.ArgumentParser(
         description="Generate various CNVKit files needed to run downstream analyses."
     )
@@ -86,7 +89,7 @@ def parse_arguments():
         help="Path to directory where output files will be stored.",
     )
 
-    return parser.parse_args()
+    return parser
 
 
 def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
@@ -181,11 +184,14 @@ def generate_parameter_file(
     return output_parameter_file
 
 
-def main():
+def main(args: t.Optional[argparse.Namespace] = None) -> None:
     # Get command line arguments
     logger.info("Starting generation of CNVKit static files ...")
     logger.info("Getting and validating command line arguments...")
-    args = parse_arguments()
+    if args is None:
+        argparser = get_argparser()
+        args = argparser.parse_args()
+    logger.debug(f"Parsed arguments: {args}")
 
     validated_bams = validate_bam_files(args.b)
     exclude_file = args.e

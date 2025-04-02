@@ -1,3 +1,4 @@
+import typing as t
 import argparse
 from pathlib import Path
 from typing import List, Tuple, Optional
@@ -13,7 +14,7 @@ from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 logger = get_package_logger()
 
 
-def parse_args() -> argparse.Namespace:
+def get_argparser() -> argparse.ArgumentParser:
     """
     Parse command-line arguments.
     """
@@ -55,7 +56,7 @@ def parse_args() -> argparse.Namespace:
         default=3.5,
         help="Modified z-score threshold for filtering noisy samples (default 3.5).",
     )
-    return parser.parse_args()
+    return parser
 
 
 def calculate_mad(cnr_file: Path, log2_column: str = "log2") -> float:
@@ -293,8 +294,11 @@ def run_mad_calculation_pipeline(
     return filtered_sample_ids, results_df
 
 
-def main():
-    args = parse_args()
+def main(args: t.Optional[argparse.Namespace] = None) -> None:
+    if args is None:
+        argparser = get_argparser()
+        args = argparser.parse_args()
+    logger.debug(f"Parsed arguments: {args}")
 
     filtered_samples, results_df = run_mad_calculation_pipeline(
         cnr_files=args.cnr_files,

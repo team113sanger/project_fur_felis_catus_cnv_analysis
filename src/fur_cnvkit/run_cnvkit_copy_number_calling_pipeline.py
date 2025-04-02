@@ -28,11 +28,12 @@ from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 logger = get_package_logger()
 
 
-def parse_arguments():
+def get_argparser() -> argparse.ArgumentParser:
     """
     Define and parse command line arguments for the CNVkit pipeline.
+
     Returns:
-        args: Parsed command line arguments.
+        argparse.ArgumentParser: Argument parser object.
     """
     parser = argparse.ArgumentParser(
         description="Run the CNVkit copy number calling pipeline."
@@ -93,10 +94,7 @@ def parse_arguments():
         required=True,
         help="Path to the output directory.",
     )
-
-    args = parser.parse_args()
-    logger.debug(f"Parsed arguments: {args}")
-    return args
+    return parser
 
 
 def perform_post_processing(
@@ -502,11 +500,15 @@ def process_study(
     logger.info(f"Study {study_id} processing complete.")
 
 
-def main():
+def main(args: t.Optional[argparse.Namespace] = None):
     """
     Main entry point for the CNVkit pipeline.
     """
-    args = parse_arguments()
+    if args is None:
+        argparser = get_argparser()
+        args = argparser.parse_args()
+    logger.debug(f"Parsed arguments: {args}")
+
     parameter_file = args.parameter_file
     male_ref = args.male_reference
     female_ref = args.female_reference
@@ -572,6 +574,7 @@ def main():
         )
 
     logger.info("CNVkit pipeline execution complete.")
+    return
 
 
 if __name__ == "__main__":

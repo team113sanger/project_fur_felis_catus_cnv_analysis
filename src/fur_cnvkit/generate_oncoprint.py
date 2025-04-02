@@ -8,8 +8,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
-def parse_args():
+# Set up logging
+logger = get_package_logger()
+
+
+def get_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate an oncoprint figure showing recurrent somatic mutations and CNVs across samples."
     )
@@ -66,7 +71,7 @@ def parse_args():
         default="alterations",
         help="Sort genes on the x-axis by number of alterations (alterations) or by genomic position (position).",
     )
-    return parser.parse_args()
+    return parser
 
 
 def read_data(maf_file: Path, cnv_file: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -470,8 +475,12 @@ def generate_recurrent_gene_oncoprint(
     )
 
 
-def main():
-    args = parse_args()
+def main(args: Optional[argparse.Namespace] = None):
+    if args is None:
+        argparser = get_argparser()
+        args = argparser.parse_args()
+    print(f"Parsed arguments: {args}")
+
     generate_recurrent_gene_oncoprint(
         maf_file=args.maf_file,
         cnv_file=args.cnv_file,
@@ -487,4 +496,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_logging()
     main()

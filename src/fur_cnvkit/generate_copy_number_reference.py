@@ -1,3 +1,4 @@
+import typing as t
 import argparse
 from pathlib import Path
 
@@ -18,8 +19,13 @@ from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 logger = get_package_logger()
 
 
-def parse_arguments():
-    """Define and parse command line arguments."""
+def get_argparser() -> argparse.ArgumentParser:
+    """
+    Create an argument parser for the script.
+
+    Returns:
+        argparse.ArgumentParser: The argument parser object.
+    """
     parser = argparse.ArgumentParser(
         description="Generate a copy number reference file for a given cohort of samples."
     )
@@ -33,7 +39,7 @@ def parse_arguments():
     parser.add_argument(
         "-o", "--outdir", type=Path, required=True, help="Path to the output directory."
     )
-    return parser.parse_args()
+    return parser
 
 
 def reclassify_unknown_samples(
@@ -150,9 +156,12 @@ def generate_reference_for_sex(
     logger.debug(f"Reference for {sex} samples generated at: {sex_reference_file}")
 
 
-def main():
-    logger.info("Getting command line arguments...")
-    args = parse_arguments()
+def main(args: t.Optional[argparse.Namespace] = None):
+    if args is None:
+        argparser = get_argparser()
+        args = argparser.parse_args()
+    logger.debug(f"Parsed arguments: {args}")
+
     parameter_file = args.parameter_file
     outdir = args.outdir
 
