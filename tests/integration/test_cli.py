@@ -30,8 +30,18 @@ def get_subprocess_message(subproces_result: subprocess.CompletedProcess) -> str
 
 
 def test_python_dash_m__version():
+    # Precondition
+    # We assume the system has python installed but occasionally the binary may
+    # be named python3 with no python binary.
+    python_exec = "python"
+    if shutil.which("python") is None:
+        assert (
+            shutil.which("python3") is not None
+        ), "Python is not installed or not in PATH"
+        python_exec = "python3"
+
     # Given
-    cmd = f"python -m {MODULE_NAME} --version"
+    cmd = f"{python_exec} -m {MODULE_NAME} --version"
     expected_version = fur_cnvkit.__version__
 
     # When
