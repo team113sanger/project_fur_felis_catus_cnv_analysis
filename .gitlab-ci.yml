@@ -18,7 +18,7 @@ include:
     - .component-variables
     - .component-before_script
     - .component-after_script
-    - .component-tags-shared-runner
+    - .component-tags-shared-large-runner
 
 .dev-variables:
   variables:
