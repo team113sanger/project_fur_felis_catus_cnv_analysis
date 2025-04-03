@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 import re
 import shlex
@@ -9,8 +8,10 @@ import os
 import pandas as pd
 
 from fur_cnvkit.utils.file_format_checker import is_bam, is_bed, is_fasta
+from fur_cnvkit.utils.logging_utils import get_package_logger
 
-logger = logging.getLogger(__name__)
+# Set up logging
+logger = get_package_logger()
 
 
 # Helper functions for command execution

@@ -3,7 +3,6 @@
 # See this FAQ: https://docs.pytest.org/en/8.2.x/how-to/index.html
 # Or read this section of the docs: https://docs.pytest.org/en/8.2.x/how-to/fixtures.html#scope-sharing-fixtures-across-classes-modules-packages-or-session
 
-import logging
 import os
 import pathlib
 
@@ -27,6 +26,10 @@ def mock_file_path(tmp_path):
 
 @pytest.fixture
 def bams() -> list[pathlib.Path]:
+    """
+    Returns a list of BAM files.
+    Skips the test if no BAM files are found.
+    """
     raw_bam_dir = os.environ.get(ENV_VAR_BAM_DIR, "")
     bam_dir = pathlib.Path(raw_bam_dir)
     bam_files = list(bam_dir.glob("**/*.bam"))
@@ -37,6 +40,10 @@ def bams() -> list[pathlib.Path]:
 
 @pytest.fixture
 def feline_baitset() -> pathlib.Path:
+    """
+    Returns the path to the baitset file.
+    Skips the test if the file is not found.
+    """
     raw_baitset_dir = os.environ.get(ENV_VAR_BAITSET_DIR, "")
     expected_baitset = "S3250994_Feline_HSA_Jan2020_146_canonical_pad100.merged.bed"
     baitset = pathlib.Path(raw_baitset_dir) / expected_baitset
@@ -47,6 +54,10 @@ def feline_baitset() -> pathlib.Path:
 
 @pytest.fixture
 def feline_reference_fasta() -> pathlib.Path:
+    """
+    Returns the path to the reference FASTA file.
+    Skips the test if the file is not found.
+    """
     raw_genome_dir = os.environ.get(ENV_VAR_GENOME_DIR, "")
     expected_reference_fasta = "Felis_catus.Felis_catus_9.0.dna.toplevel.fa"
     reference_fasta = pathlib.Path(raw_genome_dir).resolve() / expected_reference_fasta
@@ -57,6 +68,10 @@ def feline_reference_fasta() -> pathlib.Path:
 
 @pytest.fixture
 def feline_refflat_file() -> pathlib.Path:
+    """
+    Returns the path to the refflat file.
+    Skips the test if the file is not found.
+    """
     raw_annotation_dir = os.environ.get(ENV_VAR_ANNOTATION_DIR, "")
     if not raw_annotation_dir:
         pytest.skip(
