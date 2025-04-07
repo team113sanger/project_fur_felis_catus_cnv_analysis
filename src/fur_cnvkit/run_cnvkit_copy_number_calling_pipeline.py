@@ -23,13 +23,18 @@ from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_scatter,
 )
 from fur_cnvkit.calculate_mad import run_mad_calculation_pipeline
-from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
+from fur_cnvkit.utils.logging_utils import (
+    setup_logging,
+    get_package_logger,
+    logging_argparse_decorator,
+)
 
 # Set up logging
 COMMAND_NAME: str = constants.COMMAND_NAME__RUN_CNVKIT_CN_CALLING_PIPELINE
 logger = get_package_logger()
 
 
+@logging_argparse_decorator
 def get_argparser(
     subparser: t.Optional[argparse._SubParsersAction] = None,
 ) -> argparse.ArgumentParser:

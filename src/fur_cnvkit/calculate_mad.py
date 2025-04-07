@@ -10,7 +10,11 @@ import matplotlib.pyplot as plt
 
 from fur_cnvkit import constants
 from fur_cnvkit.utils.fur_utils import get_sample_id_from_file_path
-from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
+from fur_cnvkit.utils.logging_utils import (
+    setup_logging,
+    get_package_logger,
+    logging_argparse_decorator,
+)
 
 # Constants
 COMMAND_NAME: str = constants.COMMAND_NAME__CALCULATE_MAD
@@ -18,6 +22,7 @@ COMMAND_NAME: str = constants.COMMAND_NAME__CALCULATE_MAD
 logger = get_package_logger()
 
 
+@logging_argparse_decorator
 def get_argparser(
     subparser: t.Optional[argparse._SubParsersAction] = None,
 ) -> argparse.ArgumentParser:

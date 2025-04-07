@@ -14,7 +14,11 @@ from fur_cnvkit.utils.fur_utils import (
     split_file_list_by_sample_sex,
     get_sample_ids_for_file_list,
 )
-from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
+from fur_cnvkit.utils.logging_utils import (
+    setup_logging,
+    get_package_logger,
+    logging_argparse_decorator,
+)
 
 # Constants
 COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_CN_REFERENCE
@@ -23,6 +27,7 @@ COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_CN_REFERENCE
 logger = get_package_logger()
 
 
+@logging_argparse_decorator
 def get_argparser(
     subparser: t.Optional[argparse._SubParsersAction] = None,
 ) -> argparse.ArgumentParser:

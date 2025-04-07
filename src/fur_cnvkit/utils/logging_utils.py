@@ -1,6 +1,30 @@
 import typing as t
 import logging
 import sys
+from functools import wraps
+
+
+def logging_argparse_decorator(func):
+    """
+    Decorator to add logging argument to a function that returns an argparse parser or subparser.
+    This decorator adds a `--log-level` argument to the parser, allowing users to set the logging level.
+    The logging levels available are: DEBUG, INFO, WARNING, ERROR, and CRITICAL.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        parser = func(*args, **kwargs)
+        parser.add_argument(
+            "--log-level",
+            dest="log_level",
+            action="store",
+            default="INFO",
+            choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            help="Set the logging level.",
+        )
+        return parser
+
+    return wrapper
 
 
 def get_package_logger() -> logging.Logger:

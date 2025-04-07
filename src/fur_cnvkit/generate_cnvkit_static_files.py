@@ -11,7 +11,11 @@ from fur_cnvkit.utils.fur_utils import (
     categorise_files_by_tumour_normal_status,
 )
 
-from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
+from fur_cnvkit.utils.logging_utils import (
+    setup_logging,
+    get_package_logger,
+    logging_argparse_decorator,
+)
 
 COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_STATIC_FILES
 
@@ -19,6 +23,7 @@ COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_STATIC_FILES
 logger = get_package_logger()
 
 
+@logging_argparse_decorator
 def get_argparser(
     subparser: t.Optional[argparse._SubParsersAction] = None,
 ) -> argparse.ArgumentParser:
@@ -106,7 +111,6 @@ def get_argparser(
         required=True,
         help="Path to directory where output files will be stored.",
     )
-
     return parser
 
 
