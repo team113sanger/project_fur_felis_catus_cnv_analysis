@@ -367,8 +367,9 @@ def draw_alteration_grid(ax, ordered_data: pd.DataFrame) -> None:
 
 def setup_main_axis(ax, ordered_data: pd.DataFrame) -> None:
     """Configures the main axis with ticks, labels, and limits."""
+    gene_labels = [f"$\\it{{{gene}}}$" for gene in ordered_data.columns]
     ax.set_xticks(np.arange(len(ordered_data.columns)) + 0.5)
-    ax.set_xticklabels(ordered_data.columns, rotation=90)
+    ax.set_xticklabels(gene_labels, rotation=90)
     ax.set_yticks(np.arange(len(ordered_data.index)) + 0.5)
     ax.set_yticklabels(ordered_data.index)
     ax.set_xlim(0, len(ordered_data.columns))
@@ -569,6 +570,7 @@ def generate_recurrent_gene_oncoprint(  # noqa: C901
     cluster_samples_flag: bool = False,
     breakdown_file: Optional[Path] = None,
     exclude_file: Optional[Path] = None,
+    include_samples: Optional[List[str]] = None,
 ) -> None:
     # Step 1: Read data
     somatic_mutations_data, copy_number_data = read_data(maf_file, cnv_file)
@@ -592,9 +594,17 @@ def generate_recurrent_gene_oncoprint(  # noqa: C901
     mutations_pivot = prepare_mutations_data(somatic_mutations_data, recurrent_genes)
 
     # Step 5: Align sample order across datasets.
-    aligned_cna, aligned_mutations, _ = align_samples(cna_heatmap_data, mutations_pivot)
+    aligned_cna, aligned_mutations, all_samples = align_samples(
+        cna_heatmap_data, mutations_pivot
+    )
 
-    # --- New: Exclude samples listed in the exclude file ---
+    # Optional: Filter to include only desired samples.
+    if include_samples is not None:
+        aligned_cna = aligned_cna.loc[aligned_cna.index.intersection(include_samples)]
+        aligned_mutations = aligned_mutations.loc[
+            aligned_mutations.index.intersection(include_samples)
+        ]
+
     if exclude_file:
         with open(exclude_file, "r") as ef:
             exclude_samples = {line.strip() for line in ef if line.strip()}
@@ -649,7 +659,10 @@ def generate_recurrent_gene_oncoprint(  # noqa: C901
         logger.info(breakdown_table)
 
     # Create a filtering information string for the title.
-    filter_method = "both alterations" if include_option == 1 else "either alteration"
+    if include_option == 1:
+        filter_method = "both alterations"
+    else:
+        filter_method = "either alteration"
     filtering_info = f"Filtered: ≥ {num_recurrent_samples} samples with {filter_method}"
 
     # Step 9: Plot the oncoprint.
