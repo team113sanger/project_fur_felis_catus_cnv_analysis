@@ -8,15 +8,22 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import pdist
 
 from fur_cnvkit import constants
-from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
+from fur_cnvkit.utils.logging_utils import (
+    setup_logging,
+    get_package_logger,
+    logging_argparse_decorator,
+)
 
 # Set up logging
 COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_ONCOPRINT
 logger = get_package_logger()
 
 
+@logging_argparse_decorator
 def get_argparser(
     subparser: t.Optional[argparse._SubParsersAction] = None,
 ) -> argparse.ArgumentParser:
@@ -43,12 +50,16 @@ def get_argparser(
         "maf_file",
         type=Path,
         help="Path to the MAF file containing somatic mutation information.",
+        metavar="FILE",
     )
     parser.add_argument(
         "cnv_file", type=Path, help="Path to the CSV file containing CNV log2 values."
     )
     parser.add_argument(
-        "tumour_type", type=str, help="Tumour type to appear in the plot title."
+        "tumour_type",
+        type=str,
+        help="Tumour type to appear in the plot title.",
+        metavar="FILE",
     )
     parser.add_argument(
         "--num_recurrent_samples",
@@ -82,6 +93,7 @@ def get_argparser(
         "--gene_chrom_file",
         type=Path,
         default=None,
+        metavar="FILE",
         help="Optional tab-delimited file with gene location information. "
         "If provided, the file should have either two columns (Gene, Chromosome) or five columns "
         "(Gene, Ensembl, Chromosome, Start, End). Only genes found in this file are plotted.",
@@ -91,6 +103,23 @@ def get_argparser(
         choices=["alterations", "position"],
         default="alterations",
         help="Sort genes on the x-axis by number of alterations (alterations) or by genomic position (position).",
+    )
+    parser.add_argument(
+        "--cluster_samples", action="store_true", help="Flag to cluster samples"
+    )
+    parser.add_argument(
+        "--breakdown_file",
+        type=Path,
+        help="Optional file to save the breakdown table",
+        metavar="FILE",
+        default=None,
+    )
+    parser.add_argument(
+        "--exclude_file",
+        type=Path,
+        help="Optional file containing sample IDs to exclude (one per line)",
+        metavar="FILE",
+        default=None,
     )
     return parser
 
@@ -111,6 +140,8 @@ def build_gene_chrom_dict(
       - a dictionary mapping gene to chromosome (for plotting), and
       - a DataFrame with gene location info (used for sorting by genomic position).
     Otherwise, it falls back to using the MAF file.
+
+    After building, filters out invalid chromosome labels like 'Chromosome/scaffold name' or 'NA'.
     """
     gene_info_df = None
     if gene_chrom_file is not None:
@@ -136,6 +167,13 @@ def build_gene_chrom_dict(
             .first()
             .to_dict()
         )
+
+    # Filter out invalid chromosome labels that often sneak in.
+    invalid_labels = {"Chromosome/scaffold name", "NA"}
+    gene_chrom_dict = {
+        g: c for g, c in gene_chrom_dict.items() if c not in invalid_labels
+    }
+
     return gene_chrom_dict, gene_info_df
 
 
@@ -180,11 +218,20 @@ def get_recurrent_genes(
 def prepare_cnv_heatmap_data(
     copy_number_data: pd.DataFrame, recurrent_genes: List[str]
 ) -> pd.DataFrame:
-    """Extracts and processes CNV data for recurrent genes."""
+    """Extracts and processes CNV data for recurrent genes.
+
+    Converts log2 values to:
+      1 if value > 0,
+     -1 if value < 0,
+      0 if value == 0.
+    """
     cna_data = copy_number_data[["Unnamed: 0"] + recurrent_genes].set_index(
         "Unnamed: 0"
     )
-    return cna_data.applymap(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    # Use np.sign to vectorize the transformation.
+    return pd.DataFrame(
+        np.sign(cna_data), index=cna_data.index, columns=cna_data.columns
+    )
 
 
 def prepare_mutations_data(
@@ -246,14 +293,36 @@ def combine_alterations(
     return combined
 
 
+# ----------------- Clustering Helper ----------------- #
+
+
+def cluster_samples(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Clusters the samples (rows) of the DataFrame based on their genomic alteration profiles.
+    Returns a new DataFrame with rows reordered according to hierarchical clustering.
+    """
+    if df.shape[0] < 2:
+        return df
+    # Compute pairwise Euclidean distances and then the linkage matrix using average linkage.
+    distances = pdist(df.values, metric="euclidean")
+    linkage_matrix = linkage(distances, method="average")
+    order = leaves_list(linkage_matrix)
+    return df.iloc[order]
+
+
 # ----------------- Plotting Helpers ----------------- #
 
 
 def draw_alteration_cell(ax, gene_index: int, sample_index: int, value: int) -> None:
     """
-    Draws a single cell on the oncoprint.
-    Uses a mapping: 1 -> CNA gain (lightpink), -1 -> CNA loss (lightblue),
-    2 -> mutation only (star), 3 -> gain + mutation, -3 -> loss + mutation.
+    Draws a single cell on the oncoprint with borders.
+    Mapping:
+      1  -> CNA gain (lightpink),
+     -1  -> CNA loss (lightblue),
+      2  -> mutation only (white, with marker),
+      3  -> gain + mutation,
+     -3  -> loss + mutation.
+    In all cases, a black border is drawn.
     """
     mapping = {
         1: ("lightpink", False),
@@ -263,12 +332,20 @@ def draw_alteration_cell(ax, gene_index: int, sample_index: int, value: int) -> 
         -3: ("lightblue", True),
     }
     rect_color, marker_flag = mapping.get(value, (None, False))
-    if rect_color is not None:
-        ax.add_patch(
-            mpatches.Rectangle(
-                (gene_index, sample_index), 1, 1, color=rect_color, zorder=1
-            )
-        )
+
+    # Always draw a rectangle with a black border.
+    # Use the alteration color if available, otherwise default to white.
+    cell_patch = mpatches.Rectangle(
+        (gene_index, sample_index),
+        1,
+        1,
+        facecolor=rect_color if rect_color is not None else "white",
+        edgecolor="black",
+        linewidth=0.5,
+        zorder=1,
+    )
+    ax.add_patch(cell_patch)
+
     if marker_flag:
         ax.plot(
             gene_index + 0.5,
@@ -304,27 +381,55 @@ def add_chromosome_twin_axis(
 ) -> Dict[str, any]:
     """
     Adds a twin x-axis to annotate chromosomes.
+    Ensures that each chromosome is assigned a unique and consistent color across all plots,
+    even when there are more than 20 chromosomes.
     Returns a dictionary with the twin axis, chrom_colors, and unique chromosomes.
     """
     ax2 = ax.twiny()
     ax2.set_xlim(ax.get_xlim())
+
+    # Get the chromosome label for each gene in the plot.
     chrom_labels = [gene_chrom_dict.get(gene, "NA") for gene in ordered_data.columns]
-    unique_chroms = sorted(set(chrom_labels))
-    n = len(unique_chroms)
-    chrom_colors = {chrom: plt.cm.tab20(i / n) for i, chrom in enumerate(unique_chroms)}
+
+    # Create a global set of all chromosomes from the gene_chrom_dict for consistent mapping.
+    global_chroms = sorted(set(gene_chrom_dict.values()))
+    N = len(global_chroms)
+
+    # Use a colormap that can produce N discrete colors. 'gist_ncar' gives a wide variety of distinct colors.
+    if N > 0:
+        cmap = plt.cm.get_cmap("gist_ncar", N)
+    else:
+        cmap = plt.cm.get_cmap("gray", 1)
+
+    global_chrom_color_mapping = {
+        chrom: cmap(i) for i, chrom in enumerate(global_chroms)
+    }
+
+    # For the genes in the current plot, assign colors using the global mapping (default to grey if missing).
+    chrom_colors = {
+        chrom: global_chrom_color_mapping.get(chrom, "grey")
+        for chrom in set(chrom_labels)
+    }
+
     ax2.set_xticks(np.arange(len(ordered_data.columns)) + 0.5)
     ax2.set_xticklabels([" "] * len(chrom_labels), rotation=90)
     ax2.xaxis.set_ticks_position("top")
+
     for label, chrom in zip(ax2.get_xticklabels(), chrom_labels):
         label.set_bbox(
             dict(
-                facecolor=chrom_colors[chrom],
+                facecolor=chrom_colors.get(chrom, "grey"),
                 alpha=1,
                 edgecolor="none",
                 boxstyle="square,pad=0.2",
             )
         )
-    return {"ax2": ax2, "chrom_colors": chrom_colors, "unique_chroms": unique_chroms}
+
+    return {
+        "ax2": ax2,
+        "chrom_colors": global_chrom_color_mapping,  # full mapping for legend
+        "unique_chroms": global_chroms,
+    }
 
 
 def add_legends(ax, chrom_colors: dict, unique_chroms: list) -> None:
@@ -347,6 +452,8 @@ def add_legends(ax, chrom_colors: dict, unique_chroms: list) -> None:
         borderaxespad=0.0,
     )
     ax.add_artist(main_legend)
+
+    # Build the chromosome legend from the global mapping (unique_chroms).
     chrom_patches = [
         mpatches.Patch(color=chrom_colors[ch], label=ch) for ch in unique_chroms
     ]
@@ -367,16 +474,21 @@ def plot_oncoprint(
     plot_width: int,
     output_file: Optional[Path],
     x_label: str,
+    filtering_info: str,
 ) -> None:
-    """Creates and displays (or saves) the oncoprint plot using helper functions."""
+    """Creates and displays (or saves) the oncoprint plot using helper functions.
+
+    The filtering_info parameter is appended to the title to indicate the filtering criteria.
+    """
     fig, ax = plt.subplots(figsize=(plot_width, plot_height))
     draw_alteration_grid(ax, ordered_data)
     setup_main_axis(ax, ordered_data)
     twin_info = add_chromosome_twin_axis(ax, ordered_data, gene_chrom_dict)
     plt.subplots_adjust(right=0.8)
     add_legends(ax, twin_info["chrom_colors"], twin_info["unique_chroms"])
+
     ax.set_title(
-        f"Genetic Alterations (Somatic Mutations and Copy Number Variations) in {tumour_type}"
+        f"Genetic Alterations (Somatic Mutations and Copy Number Variations) in {tumour_type}\n{filtering_info}"
     )
     ax.set_xlabel(x_label)
     ax.set_ylabel("Samples")
@@ -403,6 +515,7 @@ def filter_recurrent_genes_post_alignment(
 ) -> pd.DataFrame:
     """Post-process filtering of genes based on recurrent alterations across samples."""
     if include_option == 1:
+        # Genes must have at least N samples with mutation AND N with CNV
         recurrent_mutation_genes = combined_heatmap_data.columns[
             (aligned_mutations > 0).sum(axis=0) >= num_recurrent_samples
         ]
@@ -411,13 +524,38 @@ def filter_recurrent_genes_post_alignment(
         ]
         recurrent_genes = list(set(recurrent_mutation_genes) & set(recurrent_cnv_genes))
     else:
+        # Genes must have at least N samples with ANY alteration (mutation or CNV)
         recurrent_genes = combined_heatmap_data.columns[
             (combined_heatmap_data != 0).sum(axis=0) >= num_recurrent_samples
         ]
     return combined_heatmap_data[recurrent_genes]
 
 
-def generate_recurrent_gene_oncoprint(
+def generate_breakdown_table(ordered_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate a table that counts, for each gene, the number of samples that have:
+      - CNA gain only (value = 1)
+      - CNA loss only (value = -1)
+      - Mutation only (value = 2)
+      - Gain + Mutation (value = 3)
+      - Loss + Mutation (value = -3)
+    Also adds a column for the total number of alterations,
+    and sorts by Total Alterations in descending order.
+    """
+    breakdown = pd.DataFrame(index=ordered_data.columns)
+    breakdown["CNA Gain Only"] = (ordered_data == 1).sum(axis=0)
+    breakdown["CNA Loss Only"] = (ordered_data == -1).sum(axis=0)
+    breakdown["Mutation Only"] = (ordered_data == 2).sum(axis=0)
+    breakdown["Gain + Mutation"] = (ordered_data == 3).sum(axis=0)
+    breakdown["Loss + Mutation"] = (ordered_data == -3).sum(axis=0)
+    breakdown["Total Alterations"] = (ordered_data != 0).sum(axis=0)
+
+    # Sort by Total Alterations in descending order
+    breakdown = breakdown.sort_values(by="Total Alterations", ascending=False)
+    return breakdown
+
+
+def generate_recurrent_gene_oncoprint(  # noqa: C901
     maf_file: Path,
     cnv_file: Path,
     tumour_type: str,
@@ -428,6 +566,9 @@ def generate_recurrent_gene_oncoprint(
     output_file: Optional[Path] = None,
     gene_chrom_file: Optional[Path] = None,
     gene_sort: str = "alterations",
+    cluster_samples_flag: bool = False,
+    breakdown_file: Optional[Path] = None,
+    exclude_file: Optional[Path] = None,
 ) -> None:
     # Step 1: Read data
     somatic_mutations_data, copy_number_data = read_data(maf_file, cnv_file)
@@ -453,6 +594,15 @@ def generate_recurrent_gene_oncoprint(
     # Step 5: Align sample order across datasets.
     aligned_cna, aligned_mutations, _ = align_samples(cna_heatmap_data, mutations_pivot)
 
+    # --- New: Exclude samples listed in the exclude file ---
+    if exclude_file:
+        with open(exclude_file, "r") as ef:
+            exclude_samples = {line.strip() for line in ef if line.strip()}
+        aligned_cna = aligned_cna[~aligned_cna.index.isin(exclude_samples)]
+        aligned_mutations = aligned_mutations[
+            ~aligned_mutations.index.isin(exclude_samples)
+        ]
+
     # Step 6: Combine the CNA and mutation data.
     combined_heatmap_data = combine_alterations(aligned_cna, aligned_mutations)
 
@@ -464,7 +614,8 @@ def generate_recurrent_gene_oncoprint(
         num_recurrent_samples,
         include_option,
     )
-    # Step 8: Order genes.
+
+    # Step 8: Order genes (columns).
     ordered_data = order_genes_by_alterations(filtered_data)
 
     # If gene_sort is 'position', reorder genes based on genomic coordinates.
@@ -484,6 +635,23 @@ def generate_recurrent_gene_oncoprint(
     else:
         x_label = "Genes (Ordered by Number of Alterations)"
 
+    # Optionally cluster samples (rows) if requested.
+    if cluster_samples_flag:
+        ordered_data = cluster_samples(ordered_data)
+
+    # Generate the breakdown table (now sorted by total alterations).
+    breakdown_table = generate_breakdown_table(ordered_data)
+    if breakdown_file:
+        breakdown_table.to_csv(breakdown_file)
+        logger.info(f"Breakdown table written to {breakdown_file}")
+    else:
+        logger.info("Breakdown of alterations per gene (sorted by Total Alterations):")
+        logger.info(breakdown_table)
+
+    # Create a filtering information string for the title.
+    filter_method = "both alterations" if include_option == 1 else "either alteration"
+    filtering_info = f"Filtered: ≥ {num_recurrent_samples} samples with {filter_method}"
+
     # Step 9: Plot the oncoprint.
     plot_oncoprint(
         ordered_data,
@@ -493,6 +661,7 @@ def generate_recurrent_gene_oncoprint(
         plot_width,
         output_file,
         x_label,
+        filtering_info,
     )
 
 
@@ -500,7 +669,7 @@ def main(args: Optional[argparse.Namespace] = None):
     if args is None:
         argparser = get_argparser()
         args = argparser.parse_args()
-    print(f"Parsed arguments: {args}")
+    logger.info(f"Parsed arguments: {args}")
 
     generate_recurrent_gene_oncoprint(
         maf_file=args.maf_file,
@@ -513,6 +682,9 @@ def main(args: Optional[argparse.Namespace] = None):
         output_file=args.output_file,
         gene_chrom_file=args.gene_chrom_file,
         gene_sort=args.gene_sort,
+        cluster_samples_flag=args.cluster_samples,
+        breakdown_file=args.breakdown_file,
+        exclude_file=args.exclude_file,
     )
 
 
