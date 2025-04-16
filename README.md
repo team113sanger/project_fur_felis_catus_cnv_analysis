@@ -49,11 +49,11 @@ This project hosts Docker images on Quay.io. Please see [https://quay.io/reposit
 Given a cohort of tumor and normal sample bam files, this tool:
 - Splits the cohort into male and female sub-cohorts
 - Performs `cnvkit assess` and `cnvkit autobin` to determine mappable regions of the genome and split the genome into target and anti-target regions (generating static files).
-- Determines which normal samples in each sub-cohort are of sufficient quality include in a pooled copy number reference by normal vs. normal copy number calling [Chandramohan et al, 2022 #186](https://pubmed.ncbi.nlm.nih.gov/35487348/).
-- Creates the pooled copy-number reference file for a sub-cohort from high quality normals. This requires discarding the bottom 20% of normal samples: identified based on the difference between median gene-level calls for a sample and the median of the median gene-level calls for all samples in the sub-cohort.
+- Determines which normal samples in each sub-cohort have copy number profiles of sufficient quality include in a pooled copy number reference by normal vs. normal copy number calling [Chandramohan et al, 2022 #186](https://pubmed.ncbi.nlm.nih.gov/35487348/).
+- Creates the pooled copy-number reference file for a sub-cohort from high-quality normals. This requires discarding the bottom 20% of normal samples: identified based on the difference between median gene-level calls for a sample's copy number profile and the median of the median gene-level calls for all samples in the sub-cohort.
 - Calls copy number alterations in tumour samples against the pooled reference using the `cnvikit batch` sub-command
-- Calculates the median absolute deviation (MAD) of the log₂ copy number ratios from segments in each sample, weighted the by average segment size to identify low-quality, hypersegmented tumour samples
-- Removes low-quality and hypersegmented tumor samples from the subcohort and optionally generates an oncoprint figure for the remaining samples
+- Calculates the median absolute deviation (MAD) of the log₂ copy number ratios from segments in each sample, weighted the by average segment size to identify tumours with low-quality, hypersegmented copy-number profiles
+- Removes tumours with low-quality and hypersegmented copy number profiles from each subcohort and optionally generates an oncoprint figure for the remaining samples
 
 
 ## Directory structure
