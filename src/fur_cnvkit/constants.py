@@ -26,9 +26,7 @@ COMMAND_NAME__RUN_CNVKIT_CN_CALLING_PIPELINE: str = "cnvkit_cn_calling_pipeline"
 # Text that appears in the help message that describes a command or the program
 # itself.
 DESCRIPTION__PROGRAM: str = "FUR CNVkit - a collection commands for CN analysis as part of FUR project that rely on CNVkit."
-DESCRIPTION__CALCULATE_MAD: str = (
-    "Run the Median Absolute Deviation (MAD) calculation pipeline on CNVkit files."
-)
+DESCRIPTION__CALCULATE_MAD: str = "Run the weighted Median Absolute Deviation (MAD) vs. segment size calculation pipeline on CNVkit files."
 DESCRIPTION__GENERATE_STATIC_FILES: str = (
     "Generate various CNVKit files needed to run downstream analyses."
 )
@@ -37,16 +35,18 @@ DESCRIPTION__GENERATE_CN_REFERENCE: str = (
 )
 DESCRIPTION__GENERATE_ONCOPRINT: str = "Generate an oncoprint figure showing recurrent somatic mutations and CNVs across samples."
 DESCRIPTION__RUN_CNVKIT_CN_CALLING_PIPELINE: str = (
-    "Run the CNVkit copy number calling pipeline."
+    "Run the end-to-end copy number calling workflow for a cohort of samples."
 )
 
 # Command short-help
 #
 # Text that appears in the program help that concisely describes the command.
-SHORT_HELP__CALCULATE_MAD: str = "Calculate the Median Absolute Deviation (MAD)."
+SHORT_HELP__CALCULATE_MAD: str = (
+    "Calculate the weighted Median Absolute Deviation (MAD) of segments in samples."
+)
 SHORT_HELP__GENERATE_STATIC_FILES: str = "Generate CNVKit static files."
 SHORT_HELP__GENERATE_CN_REFERENCE: str = "Generate a copy number reference file."
 SHORT_HELP__GENERATE_ONCOPRINT: str = "Generate an oncoprint figure."
 SHORT_HELP__RUN_CNVKIT_CN_CALLING_PIPELINE: str = (
-    "Run the CNVkit copy number calling pipeline."
+    "Run the end-to-end copy number calling workflow for a cohort of samples."
 )
