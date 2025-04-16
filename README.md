@@ -47,11 +47,11 @@ This project hosts Docker images on Quay.io. Please see [https://quay.io/reposit
 ## Summary
 
 Given
-- A cohort of tumor and normal sample `.bam` files
+- A cohort of tumor and normal sample `.bam` files and their indexes
 - A bedfile describing the targeted regions in a pulldown study
 - A reference genome fasta file
 - A flat file containing gene coordinates (e.g. Ensembl GTF or GFF3)
-- A sample metadata xlsx file
+- A sample metadata `.xlsx` file containing sample IDs (`Sanger DNA ID`), tumor normal status (`T/N`) and Sex (`Sex`) for each sample.
 
 
 This tool:
