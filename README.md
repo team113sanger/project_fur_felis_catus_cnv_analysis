@@ -1,6 +1,6 @@
 # fur_cnvkit
 
-This repository contains code that was used for performing a copy number alteration (CNA) analysis for the FUR Felis catus project in the Adams group at the Wellcome Trust Sanger institute. It can be adapted for other targeted sequencing projects that require a similar analysis by altering the parameters in `src/fur_cnvkit/parameters/parameter_file_template.json`
+This repository contains code that was used for performing a copy number alteration (CNA) analysis for the FUR Felis catus project in the Adams group at the Wellcome Trust Sanger institute. It builds on top of [CNVkit](http://dx.doi.org/10.1371/journal.pcbi.1004873) and can be adapted for other targeted sequencing projects that require a similar analysis by altering the parameters in `src/fur_cnvkit/parameters/parameter_file_template.json`
 
 |                         Main                         |                         Develop                          |
 | :----------------------------------------------------: | :------------------------------------------------------: |
@@ -46,13 +46,15 @@ This project hosts Docker images on Quay.io. Please see [https://quay.io/reposit
 
 ## Summary
 
-Given a cohort of tumor and normal samples, this tool:
+Given a cohort of tumor and normal sample bam files, this tool:
 - Splits the cohort into male and female sub-cohorts
+- Performs `cnvkit assess` and `cnvkit autobin` to determine mappable regions of the genome and split the genome into target and anti-target regions (generating static files).
 - Determines which normal samples in each sub-cohort are of sufficient quality include in a pooled copy number reference by normal vs. normal copy number calling [Chandramohan et al, 2022 #186](https://pubmed.ncbi.nlm.nih.gov/35487348/).
-- Creates the pooled copy-number reference file for a sub-cohort from high quality normals
-- Calls copy number alterations in tumour samples using the `cnvikit batch` subcommand
+- Creates the pooled copy-number reference file for a sub-cohort from high quality normals. This requires discarding the bottom 20% of normal samples: identified based on the difference between median gene-level calls for a sample and the median of the median gene-level calls for all samples in the sub-cohort.
+- Calls copy number alterations in tumour samples against the pooled reference using the `cnvikit batch` sub-command
 - Calculates the median absolute deviation (MAD) of the log₂ copy number ratios from segments in each sample, weighted the by average segment size to identify low-quality, hypersegmented tumour samples
-- Removes low-quality and hypersegmented tumor samples from the subcohort and generates an oncoprint figure for the remaining samples
+- Removes low-quality and hypersegmented tumor samples from the subcohort and optionally generates an oncoprint figure for the remaining samples
+
 
 ## Directory structure
 
