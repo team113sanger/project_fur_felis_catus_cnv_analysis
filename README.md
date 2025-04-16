@@ -24,14 +24,14 @@ rely on CNVkit.
 
 positional arguments:
   COMMAND
-    mad                 Calculate the Median Absolute Deviation (MAD).
+    mad                 Calculate the weighted Median Absolute Deviation (MAD) of segments in samples.
     cnvkit_static_files
                         Generate CNVKit static files.
     copy_number_reference
                         Generate a copy number reference file.
     oncoprint           Generate an oncoprint figure.
     cnvkit_cn_calling_pipeline
-                        Run the CNVkit copy number calling pipeline.
+                        Run the end-to-end copy number calling workflow for a cohort of samples
 
 options:
   -h, --help            show this help message and exit
