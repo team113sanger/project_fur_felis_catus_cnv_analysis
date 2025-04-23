@@ -55,6 +55,13 @@ def get_argparser(
     parser.add_argument(
         "-o", "--outdir", type=Path, required=True, help="Path to the output directory."
     )
+    parser.add_argument(
+        "--verbose",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        dest="verbose",
+        help="log level",
+    )
     return parser
 
 

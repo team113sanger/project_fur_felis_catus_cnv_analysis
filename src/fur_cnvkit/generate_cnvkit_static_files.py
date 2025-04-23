@@ -106,6 +106,13 @@ def get_argparser(
         required=True,
         help="Path to directory where output files will be stored.",
     )
+    parser.add_argument(
+        "--verbose",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        dest="verbose",
+        help="log level",
+    )
 
     return parser
 

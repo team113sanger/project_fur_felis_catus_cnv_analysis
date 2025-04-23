@@ -9,6 +9,7 @@ from fur_cnvkit import (
     run_cnvkit_copy_number_calling_pipeline,
 )
 from fur_cnvkit import constants
+from fur_cnvkit.utils import logging_utils
 
 
 def main():
@@ -35,6 +36,10 @@ def main():
 
     # Parse the arguments
     args = parser.parse_args()
+
+    logging_utils.setup_logging(
+        level=getattr(args, "verbose", "INFO"),
+    )
 
     # Call the appropriate function based on the command from their respective
     # modules

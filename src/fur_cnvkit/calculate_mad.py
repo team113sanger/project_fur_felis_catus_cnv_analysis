@@ -75,6 +75,14 @@ def get_argparser(
         default=3.5,
         help="Modified z-score threshold for filtering noisy samples (default 3.5).",
     )
+    parser.add_argument(
+        "--verbose",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        dest="verbose",
+        help="log level",
+    )
+
     return parser
 
 
