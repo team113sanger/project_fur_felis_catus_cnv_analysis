@@ -45,9 +45,6 @@ def get_argparser(
             help=constants.SHORT_HELP__GENERATE_CN_REFERENCE,
         )
 
-    parser = argparse.ArgumentParser(
-        description="Generate a copy number reference file for a given cohort of samples."
-    )
     parser.add_argument(
         "-p",
         "--parameter_file",

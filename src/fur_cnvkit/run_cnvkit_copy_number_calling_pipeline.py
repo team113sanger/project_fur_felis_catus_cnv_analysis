@@ -52,9 +52,6 @@ def get_argparser(
             help=constants.SHORT_HELP__RUN_CNVKIT_CN_CALLING_PIPELINE,
         )
 
-    parser = argparse.ArgumentParser(
-        description="Run the CNVkit copy number calling pipeline."
-    )
     # Parameter file path
     parser.add_argument(
         "-p",
