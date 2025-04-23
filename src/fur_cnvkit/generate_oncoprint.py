@@ -92,6 +92,13 @@ def get_argparser(
         default="alterations",
         help="Sort genes on the x-axis by number of alterations (alterations) or by genomic position (position).",
     )
+    parser.add_argument(
+        "--verbose",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        dest="verbose",
+        help="log level",
+    )
     return parser
 
 
