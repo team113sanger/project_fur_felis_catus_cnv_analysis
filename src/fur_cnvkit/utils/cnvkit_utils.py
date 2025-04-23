@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import typing as t
 import os
+import multiprocessing
 
 import pandas as pd
 
@@ -507,13 +508,17 @@ def run_cnvkit_autobin(
     return {"target": output_target_bed_path, "antitarget": output_antitarget_bed_path}
 
 
-def run_cnvkit_coverage(bam_file: Path, interval_bed: Path, outdir: Path) -> Path:
+def run_cnvkit_coverage(
+    bam_file: Path, interval_bed: Path, outdir: Path, cpus: t.Optional[int] = None
+) -> Path:
     """Run cnvkit.py coverage on a BAM file with a given interval BED file.
 
     Args:
         bam_file (Path): Path to the BAM file.
         interval_bed (Path): Path to the interval BED file.
         outdir (Path): Directory to store the output coverage file.
+        cpus (Optional[int]): Number of CPUs to use for CNVKit mutli-processing.
+            If None, use all available CPUs. If 0 or negative, use 1 CPU.
 
     Returns:
         Path: The output coverage file path.
@@ -549,10 +554,33 @@ def run_cnvkit_coverage(bam_file: Path, interval_bed: Path, outdir: Path) -> Pat
     if skip_file_generation(output_file_path, validator=is_valid_coverage_file):
         return output_file_path
 
-    cmd = f"cnvkit.py coverage {str(bam_file)} {str(interval_bed)} -o {str(output_file_path)} --processes"
+    cpus_to_use, is_multiprocessing = _get_cpu_allocation(cpus)
+
+    logger.info(
+        f"Running cnvkit.py with {cpus_to_use} CPU(s) for coverage calculation - "
+        f"parallelisation is {'enabled' if is_multiprocessing else 'disabled'}."
+    )
+
+    cmd = f"cnvkit.py coverage {str(bam_file)} {str(interval_bed)} -o {str(output_file_path)}"
+    cmd += f" --processes {cpus_to_use}" if is_multiprocessing else ""
     run_command(cmd)
 
     return output_file_path
+
+
+def _get_cpu_allocation(cpus: t.Optional[int]) -> t.Tuple[int, bool]:
+    actual_cpu_count = multiprocessing.cpu_count()
+    cpus_to_use = 0
+    if cpus is None:
+        cpus_to_use = actual_cpu_count
+        is_multiprocessing = cpus_to_use > 1
+    elif cpus <= 0:
+        cpus_to_use = 1
+        is_multiprocessing = False
+    else:
+        cpus_to_use = min(cpus, actual_cpu_count)
+        is_multiprocessing = cpus_to_use > 1
+    return cpus_to_use, is_multiprocessing
 
 
 def run_cnvkit_reference(

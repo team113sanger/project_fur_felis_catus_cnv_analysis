@@ -1,6 +1,7 @@
 import typing as t
 import argparse
 from pathlib import Path
+import multiprocessing
 
 from fur_cnvkit import constants
 from fur_cnvkit.normal_vs_normal import perform_normal_vs_normal_comparisons
@@ -23,7 +24,7 @@ COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_CN_REFERENCE
 logger = get_package_logger()
 
 
-def get_argparser(
+def get_argparser(  # noqa: C901
     subparser: t.Optional[argparse._SubParsersAction] = None,
 ) -> argparse.ArgumentParser:
     """
@@ -45,6 +46,39 @@ def get_argparser(
             help=constants.SHORT_HELP__GENERATE_CN_REFERENCE,
         )
 
+    def _parse_max_cpus(value: t.Union[int, str]) -> int:
+        """
+        Parse and validate the max_cpus argument.
+
+        Args:
+            value: The value provided by the user, or None if --max_cpus was specified without a value
+
+        Returns:
+            int: The number of CPUs to use
+
+        Raises:
+            argparse.ArgumentTypeError: If the provided value is invalid
+        """
+        max_available = multiprocessing.cpu_count()
+
+        try:
+            cpu_count = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"Invalid value for --max_cpus: {value}. Must be an integer."
+            )
+
+        if cpu_count <= 0:
+            raise argparse.ArgumentTypeError(
+                f"Invalid value for --max_cpus: {value}. Must be a positive integer."
+            )
+        if cpu_count > max_available:
+            raise argparse.ArgumentTypeError(
+                f"Invalid value for --max_cpus: {value}. Must be less than {max_available}."
+            )
+
+        return cpu_count
+
     parser.add_argument(
         "-p",
         "--parameter_file",
@@ -62,6 +96,15 @@ def get_argparser(
         dest="verbose",
         help="log level",
     )
+    parser.add_argument(
+        "--max_cpus",
+        type=_parse_max_cpus,
+        nargs="?",  # Makes the argument optional after the flag
+        const=multiprocessing.cpu_count(),  # This value is used when --max_cpus is specified without a value
+        default=1,  # This value is used when --max_cpus is not specified at all
+        dest="max_cpus",
+        help="Maximum number of CPUs to use. If specified without a value, all available CPUs will be used. Default is 1.",
+    )
     return parser
 
 
@@ -70,6 +113,7 @@ def reclassify_unknown_samples(
     targets_bed: Path,
     antitargets_bed: Path,
     outdir: Path,
+    max_cpus: t.Optional[int] = None,
 ) -> dict:
     """
     For any samples initially marked as 'unknown' (from metadata), generate
@@ -93,9 +137,11 @@ def reclassify_unknown_samples(
 
     for sample_bam in unknown_samples:
         logger.info(f"Reclassifying sample {sample_bam} with unknown sex ...")
-        target_cov = run_cnvkit_coverage(sample_bam, targets_bed, unknown_cov_dir)
+        target_cov = run_cnvkit_coverage(
+            sample_bam, targets_bed, unknown_cov_dir, cpus=max_cpus
+        )
         antitarget_cov = run_cnvkit_coverage(
-            sample_bam, antitargets_bed, unknown_cov_dir
+            sample_bam, antitargets_bed, unknown_cov_dir, cpus=max_cpus
         )
         determined_sex = run_cnvkit_sex([target_cov, antitarget_cov])
         logger.info(f"Determined sex for sample {sample_bam}: {determined_sex}")
@@ -125,6 +171,7 @@ def generate_reference_for_sex(
     targets_bed: Path,
     antitargets_bed: Path,
     sample_metadata_xlsx: Path,
+    max_cpus: t.Optional[int] = None,
 ):
     """
     For a given sex, generate coverage files, perform normal vs. normal comparisons,
@@ -140,9 +187,11 @@ def generate_reference_for_sex(
     sex_normal_coverage_files = []
     for sample_bam in sex_normal_bams:
         logger.info(f"Generating coverage files for sample {sample_bam} ({sex})...")
-        target_cov = run_cnvkit_coverage(sample_bam, targets_bed, coverage_file_dir)
+        target_cov = run_cnvkit_coverage(
+            sample_bam, targets_bed, coverage_file_dir, cpus=max_cpus
+        )
         antitarget_cov = run_cnvkit_coverage(
-            sample_bam, antitargets_bed, coverage_file_dir
+            sample_bam, antitargets_bed, coverage_file_dir, cpus=max_cpus
         )
         sex_normal_coverage_files.extend([target_cov, antitarget_cov])
     logger.debug(f"Coverage files for {sex} samples: {sex_normal_coverage_files}")
@@ -187,6 +236,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
 
     parameter_file = args.parameter_file
     outdir = args.outdir
+    max_cpus = args.max_cpus
 
     logger.debug(f"Parameter file: {parameter_file}")
     logger.debug(f"Outdir: {outdir}")
@@ -216,7 +266,11 @@ def main(args: t.Optional[argparse.Namespace] = None):
 
     # Reclassify unknown samples using coverage files.
     sex_separated_normal_bams = reclassify_unknown_samples(
-        sex_separated_normal_bams, targets_bed, antitargets_bed, outdir
+        sex_separated_normal_bams=sex_separated_normal_bams,
+        targets_bed=targets_bed,
+        antitargets_bed=antitargets_bed,
+        outdir=outdir,
+        max_cpus=max_cpus,
     )
     logger.debug(f"Final grouping of samples by sex: {sex_separated_normal_bams}")
 
@@ -226,13 +280,14 @@ def main(args: t.Optional[argparse.Namespace] = None):
             logger.info(f"No {sex} samples available, skipping reference generation.")
             continue
         generate_reference_for_sex(
-            sex,
-            sex_separated_normal_bams[sex],
-            outdir,
-            reference_fasta,
-            targets_bed,
-            antitargets_bed,
-            sample_metadata_xlsx,
+            sex=sex,
+            sex_normal_bams=sex_separated_normal_bams[sex],
+            outdir=outdir,
+            reference_fasta=reference_fasta,
+            targets_bed=targets_bed,
+            antitargets_bed=antitargets_bed,
+            sample_metadata_xlsx=sample_metadata_xlsx,
+            max_cpus=max_cpus,
         )
 
 
