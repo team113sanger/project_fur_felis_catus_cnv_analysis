@@ -14,6 +14,7 @@ from fur_cnvkit.utils.fur_utils import (
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
 COMMAND_NAME: str = constants.COMMAND_NAME__GENERATE_STATIC_FILES
+DEFAULT_PARAMETER_FILE_NAME: str = "parameters.json"
 
 # Set up the logger
 logger = get_package_logger()
@@ -96,8 +97,12 @@ def get_argparser(
         metavar="PARAMETER_FILE_PREFIX",
         type=str,
         required=False,
-        default="parameters.json",
-        help="Prefix of output parameter file to store CNVKit static files ({prefix}.parameters.json). Can be used in downstream scripts to avoid re-specifying paths. Will be written to outdir (-o). Default: parameters.json",
+        default=DEFAULT_PARAMETER_FILE_NAME,
+        help=(
+            f"Prefix of output parameter file to store CNVKit static files ({{prefix}}.parameters.json). "
+            "Can be used in downstream scripts to avoid re-specifying paths. "
+            f"Will be written to outdir (-o). Default: {DEFAULT_PARAMETER_FILE_NAME}"
+        ),
     )
     parser.add_argument(
         "-o",
@@ -193,6 +198,19 @@ def generate_parameter_file(
     }
 
     # Construct output parameter file path (default: parameters.json from argparse)
+    endswith_default = parameter_file_name.endswith(DEFAULT_PARAMETER_FILE_NAME)
+    is_default = parameter_file_name == DEFAULT_PARAMETER_FILE_NAME
+    if endswith_default and not is_default:
+        # E.g "my_parameter_file.parameters.json" -> "my_parameter_file.parameters.json"
+        prefix = parameter_file_name.replace(DEFAULT_PARAMETER_FILE_NAME, "").rstrip(
+            "."
+        )
+        parameter_file_name = f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+    elif not endswith_default:
+        # E.g "my_parameter_file" -> "my_parameter_file.parameters.json"
+        prefix = parameter_file_name.rstrip(".")
+        parameter_file_name = f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+
     output_parameter_file = outdir / parameter_file_name
 
     # Write data to output parameter file path
