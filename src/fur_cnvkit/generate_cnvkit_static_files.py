@@ -192,8 +192,8 @@ def generate_parameter_file(
         "baitset_genes_file": str(baitset_genes_file),
     }
 
-    # Construct output parameter file path
-    output_parameter_file = outdir / f"{parameter_file_name}.parameters.json"
+    # Construct output parameter file path (default: parameters.json from argparse)
+    output_parameter_file = outdir / parameter_file_name
 
     # Write data to output parameter file path
     logger.info(f"Writing parameter file to {str(output_parameter_file)}")
@@ -267,18 +267,18 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
 
     # Generate parameter file including newly generated reference files
     generate_parameter_file(
-        filtered_bams,
-        reference_fasta,
-        unplaced_contig_prefixes,
-        baitset_bed,
-        refflat_file,
-        sample_metadata_xlsx,
-        access_bed,
-        target_bed_dict["target"],
-        target_bed_dict["antitarget"],
-        baitset_genes_file,
-        parameter_file_name,
-        outdir,
+        bam_files=filtered_bams,
+        reference_fasta=reference_fasta,
+        unplaced_contig_prefixes=unplaced_contig_prefixes,
+        baitset_bed=baitset_bed,
+        refflat_file=refflat_file,
+        sample_metadata_xlsx=sample_metadata_xlsx,
+        access_bed=access_bed,
+        targets_bed=target_bed_dict["target"],
+        antitargets_bed=target_bed_dict["antitarget"],
+        baitset_genes_file=baitset_genes_file,
+        parameter_file_name=parameter_file_name,
+        outdir=outdir,
     )
 
     logger.info("CNVKit static file generation successfully completed.")
