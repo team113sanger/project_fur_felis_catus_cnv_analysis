@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 import typing as t
 
@@ -22,8 +21,10 @@ from fur_cnvkit.utils.fur_utils import (
     get_sample_sex,
 )
 
+from fur_cnvkit.utils.logging_utils import get_package_logger
+
 # Set up logging
-logger = logging.getLogger(__name__)
+logger = get_package_logger()
 
 
 def perform_normal_vs_normal_comparisons(
@@ -432,7 +433,7 @@ def create_log2_ratio_boxplot(log2_ratios_df: pd.DataFrame, outdir: Path):
         pdf.savefig(fig)
         plt.close(fig)
 
-    logging.info(f"Boxplot saved to {str(output_plot)}")
+    logger.info(f"Boxplot saved to {str(output_plot)}")
 
 
 def perform_normal_vs_normal_comparisons_for_sample(

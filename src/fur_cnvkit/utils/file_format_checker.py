@@ -1,9 +1,11 @@
-import logging
 from pathlib import Path
 
 import pysam
 
-logger = logging.getLogger(__name__)
+from fur_cnvkit.utils.logging_utils import get_package_logger
+
+# Set up logging
+logger = get_package_logger()
 
 
 def is_fasta(file_path: Path) -> bool:

@@ -1,0 +1,129 @@
+# syntax=docker/dockerfile:1
+############################################
+# Stage 1: Base setup with dependencies
+# Install ssytem
+############################################
+FROM ubuntu:22.04 AS base_stage
+
+# Set Python and R versions
+ARG PYTHON_VERSION=3.10 R_VERSION=4.2.2
+
+USER root
+
+# Set environment variables
+ENV \
+    PYTHONUNBUFFERED=1 \
+    PIP_DEFAULT_TIMEOUT=100 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_VERSION=23.3.1 \
+    OPT_DIRECTORY="/opt" \
+    USER_NAME="ubuntu"
+
+ENV \
+    PROJECT_DIRECTORY="${OPT_DIRECTORY:?}/repo" \
+    R_LIBS_USER="${OPT_DIRECTORY}/r-libs" \
+    USER_DIRECTORY="/home/${USER_NAME:?}"
+
+ENV R_LIBS="${R_LIBS_USER:?}:/usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library"
+
+RUN \
+    useradd "${USER_NAME}" --shell /bin/bash --create-home --home-dir "${USER_DIRECTORY}" && \
+    mkdir -p "${PROJECT_DIRECTORY:?}" "${R_LIBS_USER:?}" && \
+    chown -R "${USER_NAME}:${USER_NAME}" "${OPT_DIRECTORY}" "${USER_DIRECTORY}" && \
+    chmod -R 755 "${PROJECT_DIRECTORY}"  "${OPT_DIRECTORY}" "${USER_DIRECTORY}"
+
+# Update System
+# Install system packages required by Python packages
+# We include:
+# - curl + wget, for debugging or downloading files
+# - openssh-client, to be able to do git operations over ssh & also scp for backup-and-restore operations
+# - build-essential, meta-packages that are essential to compile software including gcc, g++, make, etc.
+# - pkg-config, to manage compile and link flags for libraries
+# - software-properties-common/gpg/dirmngr, to add system repositories and install R
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN \
+    apt-get update --quiet && \
+    apt-get install --yes --quiet --no-install-recommends \
+    build-essential \
+    libcurl4-openssl-dev \
+    pkg-config \
+    python3 \
+    python3-venv \
+    python3-pip \
+    curl \
+    wget \
+    openssh-client \
+    software-properties-common \
+    dirmngr \
+    gpg \
+    && python3 --version | grep ${PYTHON_VERSION:?} \
+    && python3 -m pip install --upgrade pip==${PIP_VERSION} \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get -s clean
+
+# Install R 4.2.2 from https://cloud.r-project.org/bin/linux/ubuntu/
+# The subversions of R-4.* can be found at https://cloud.r-project.org/bin/linux/ubuntu/jammy-cran40/
+#
+# The system packages from this r-project repository ensure that a specific
+# version of R is installed however do not install r-base or r-recommended
+# packages, as they will force the installation to the latest R version despite
+# specifying different versions of r-base-core and r-base-dev. Yes its mad.
+#
+RUN \
+    wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/cran_ubuntu_key.gpg && \
+    add-apt-repository 'deb https://cloud.r-project.org/bin/linux/ubuntu jammy-cran40/' && \
+    apt-get update -qq && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    r-base-core=4.2.2-1.2204.0 \
+    r-base-dev=4.2.2-1.2204.0 \
+    r-base-html=4.2.2-1.2204.0 \
+    r-doc-html=4.2.2-1.2204.0 \
+    r-doc-info=4.2.2-1.2204.0 \
+    r-doc-pdf=4.2.2-1.2204.0 \
+    r-mathlib=4.2.2-1.2204.0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && R --version | grep ${R_VERSION:?}
+
+
+############################################
+# Stage 2: Build the wheel
+############################################
+FROM base_stage AS build_stage_python
+
+USER root
+
+# Copy project files and build wheel
+WORKDIR ${PROJECT_DIRECTORY}
+COPY . .
+ENV PATH="/root/.local/bin:${PATH}"
+RUN \
+    rm -rf .git && \
+    apt-get update --quiet && \
+    apt-get install --yes --quiet pipx && \
+    pipx install "poetry==1.8.5" && \
+    poetry build -f wheel
+
+############################################
+# Stage 3: Final image
+############################################
+FROM base_stage AS final_stage
+
+USER root
+
+# Install R packages
+COPY dependencies.R /tmp/
+RUN \
+    PKGTYPE="binary" Rscript /tmp/dependencies.R && \
+    rm /tmp/dependencies.R
+
+# Copy wheel from python build stage
+COPY --from=build_stage_python ${PROJECT_DIRECTORY}/dist/*.whl /tmp/
+
+# Install wheel
+RUN \
+    python3 -m pip install --no-cache-dir /tmp/*.whl && \
+    rm /tmp/*.whl
+
+# Switch to non-root user
+USER ${USER_NAME}
+WORKDIR ${USER_DIRECTORY}

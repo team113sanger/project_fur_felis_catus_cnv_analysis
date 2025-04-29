@@ -24,6 +24,10 @@
 # Put the snippet in the __init__.py of your top-level package
 
 ###### supporting Python versions below 3.8 ######
+import typing as t
+
+if t.TYPE_CHECKING:
+    from logging import Logger
 
 
 def _set_version() -> str:  # noqa: C901
@@ -57,6 +61,22 @@ def _set_version() -> str:  # noqa: C901
         )
         warn(msg)
     return version
+
+
+def _get_logger() -> "Logger":
+    """
+    Get a logger object with the given name, by default the name of this package.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    # Suppress logging of this package by default
+    logger.addHandler(logging.NullHandler())
+    logger.setLevel(logging.WARNING)
+    return logger
+
+
+LOGGER = _get_logger()
 
 
 __version__ = _set_version()

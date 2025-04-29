@@ -1,12 +1,13 @@
 from collections import defaultdict
 import json
-import logging
 from pathlib import Path
 import typing as t
 
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from fur_cnvkit.utils.logging_utils import get_package_logger
+
+logger = get_package_logger()
 
 # -----------------------------------------------
 # Functions for handling sample IDs
@@ -56,7 +57,7 @@ def get_sample_specific_files(
     file_message = (
         f"Finding {suffixes_as_string} files" if suffixes_as_string else "Finding files"
     )
-    logging.info(f"{file_message} corresponding to sample {sample} ...")
+    logger.info(f"{file_message} corresponding to sample {sample} ...")
 
     if suffixes is None:
         # Return all files that contain `sample` in their name.
@@ -91,7 +92,7 @@ def get_sample_specific_files(
 # -----------------------------------------------
 def load_metadata(parameter_json: Path) -> t.Dict[str, t.Any]:
     """Load JSON metadata from the given file."""
-    logging.info(f"Loading metadata from {str(parameter_json)} ...")
+    logger.info(f"Loading metadata from {str(parameter_json)} ...")
     with open(parameter_json, "r") as json_file:
         return json.load(json_file)
 
@@ -166,7 +167,7 @@ def extract_sample_ids_from_exclude_file(exclude_file: Path) -> t.List[str]:
 
         return exclude_samples
     except FileNotFoundError:
-        logging.error(
+        logger.error(
             f"Exclude file is not found: {exclude_file}. Please provide an exclude file."
         )
         raise
@@ -190,19 +191,19 @@ def remove_unwanted_sample_files(
 ) -> t.List[Path]:
     """Remove files that belong to samples in the exclude file from the final BAM list"""
     # Read in sample IDs from the exclude file
-    logging.info(f"Extracting samples to exclude from {str(exclude_file)} ...")
+    logger.info(f"Extracting samples to exclude from {str(exclude_file)} ...")
     exclude_samples = extract_sample_ids_from_exclude_file(exclude_file)
 
-    logging.debug(f"Exclude samples: {exclude_samples}")
+    logger.debug(f"Exclude samples: {exclude_samples}")
 
     # Filter out any files that belong to unwanted samples
-    logging.info("Filtering out samples found in the exclude file ...")
+    logger.info("Filtering out samples found in the exclude file ...")
     filtered_files = filter_files_by_exclude_samples(files, exclude_samples)
 
-    logging.info(
+    logger.info(
         f"Successfully filtered out {len(files) - len(filtered_files)} files from unwanted samples, leaving a total of {len(filtered_files)} files."
     )
-    logging.debug(f"Filtered files: {filtered_files}")
+    logger.debug(f"Filtered files: {filtered_files}")
 
     return filtered_files
 
@@ -458,7 +459,7 @@ def get_tumour_normal_status(sample_metadata_xlsx: Path, sample_id: str):
 def categorise_files_by_tumour_normal_status(
     files: t.List[Path], sample_metadata_xlsx: Path
 ) -> t.DefaultDict[str, t.List[Path]]:
-    logging.info("Categorising files based on their tumour/normal status ...")
+    logger.info("Categorising files based on their tumour/normal status ...")
 
     # Initialise a defaultdict to store categorised files
     tn_status_file_dict = defaultdict(list)
@@ -472,14 +473,14 @@ def categorise_files_by_tumour_normal_status(
         elif tn_status == "N":
             tn_status_file_dict["N"].append(file)
         else:
-            logging.error(
+            logger.error(
                 "Unable to categorise files based on their tumour/normal status"
             )
             raise ValueError(
                 f"Got unexpected tumour normal status '{tn_status}' for sample ID '{sample_id}'. Expected 'T' or 'N'."
             )
 
-    logging.debug(f"Categorised files: {tn_status_file_dict}")
-    logging.info("Successfully categorised files by their tumour/normal status")
+    logger.debug(f"Categorised files: {tn_status_file_dict}")
+    logger.info("Successfully categorised files by their tumour/normal status")
 
     return tn_status_file_dict

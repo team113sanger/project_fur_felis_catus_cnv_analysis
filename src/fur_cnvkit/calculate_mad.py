@@ -1,5 +1,5 @@
+import typing as t
 import argparse
-import logging
 from pathlib import Path
 from typing import List, Tuple, Optional
 import math
@@ -8,20 +8,38 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from fur_cnvkit import constants
 from fur_cnvkit.utils.fur_utils import get_sample_id_from_file_path
+from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Constants
+COMMAND_NAME: str = constants.COMMAND_NAME__CALCULATE_MAD
+
+logger = get_package_logger()
 
 
-def parse_args() -> argparse.Namespace:
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Parse command-line arguments.
+    Either returns a new ArgumentParser instance or a subparser for the
+    calculate_mad command.
+
+    It is preferrable to use the subparser argument as it unifies the CLI to a
+    single entrypoint. To preserve backwards compatibility, the function can
+    also be called without the subparser argument.
     """
-    parser = argparse.ArgumentParser(
-        description="Run MAD calculation pipeline on CNVkit files."
-    )
+    if subparser is None:
+        parser = argparse.ArgumentParser(
+            description=constants.DESCRIPTION__CALCULATE_MAD
+        )
+    else:
+        parser = subparser.add_parser(
+            COMMAND_NAME,
+            description=constants.DESCRIPTION__CALCULATE_MAD,
+            help=constants.SHORT_HELP__CALCULATE_MAD,
+        )
+
     parser.add_argument(
         "--cnr_files",
         nargs="+",
@@ -57,7 +75,15 @@ def parse_args() -> argparse.Namespace:
         default=3.5,
         help="Modified z-score threshold for filtering noisy samples (default 3.5).",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--verbose",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        dest="verbose",
+        help="log level",
+    )
+
+    return parser
 
 
 def calculate_mad(cnr_file: Path, log2_column: str = "log2") -> float:
@@ -67,7 +93,7 @@ def calculate_mad(cnr_file: Path, log2_column: str = "log2") -> float:
     try:
         data = pd.read_csv(cnr_file, sep="\t")
     except Exception as e:
-        logging.error(f"Error reading file {cnr_file}: {e}")
+        logger.error(f"Error reading file {cnr_file}: {e}")
         raise
 
     if log2_column not in data.columns:
@@ -85,18 +111,18 @@ def calculate_average_segment_size(cns_file: Path) -> Optional[float]:
     If the file does not exist or is invalid, returns None.
     """
     if not cns_file.exists():
-        logging.warning(f"Segment file not found: {cns_file}")
+        logger.warning(f"Segment file not found: {cns_file}")
         return None
 
     try:
         seg_data = pd.read_csv(cns_file, sep="\t")
     except Exception as e:
-        logging.error(f"Error reading file {cns_file}: {e}")
+        logger.error(f"Error reading file {cns_file}: {e}")
         return None
 
     required_cols = {"chromosome", "start", "end"}
     if not required_cols.issubset(seg_data.columns):
-        logging.warning(
+        logger.warning(
             f"Columns {required_cols} not found in {cns_file}; cannot compute segment size."
         )
         return None
@@ -135,17 +161,17 @@ def filter_noisy_samples_by_zscore(
     median_val = metric_values.median()
     mad_metric = (metric_values - median_val).abs().median()
     if mad_metric == 0:
-        logging.warning("MAD of metric is zero; no outlier filtering applied.")
+        logger.warning("MAD of metric is zero; no outlier filtering applied.")
         return []
 
     # Compute the modified z-score for each sample.
     modified_z = 0.6745 * (metric_values - median_val) / mad_metric
     # Filter samples where the modified z-score exceeds the threshold.
     noisy_samples = results_df.loc[modified_z > z_threshold, "Sample"].tolist()
-    logging.info(
+    logger.info(
         f"Filtering using z_threshold {z_threshold}. Median: {median_val:.4f}, MAD: {mad_metric:.4f}"
     )
-    logging.info(f"Noisy samples (modified z-score > {z_threshold}): {noisy_samples}")
+    logger.info(f"Noisy samples (modified z-score > {z_threshold}): {noisy_samples}")
     return noisy_samples
 
 
@@ -173,7 +199,7 @@ def plot_metric_distribution(
         plt.show()
     else:
         plt.close()
-    logging.info(f"{metric_col} distribution plot saved to {plot_path}")
+    logger.info(f"{metric_col} distribution plot saved to {plot_path}")
 
 
 def build_cns_mapping(cns_files: Optional[List[Path]]) -> dict:
@@ -199,7 +225,7 @@ def process_sample(
     try:
         mad_value = calculate_mad(cnr_file, log2_column=log2_column)
     except Exception as e:
-        logging.error(
+        logger.error(
             f"Error calculating MAD for sample {sample_id} from file {cnr_file}: {e}"
         )
         return None
@@ -226,7 +252,7 @@ def save_results_df(results_df: pd.DataFrame, outdir: Path, prefix: str) -> None
     outdir.mkdir(parents=True, exist_ok=True)
     tsv_path = outdir / f"{prefix}.metrics.tsv"
     results_df.to_csv(tsv_path, sep="\t", index=False)
-    logging.info(f"Metrics (including MAD and adjusted MAD metric) saved to {tsv_path}")
+    logger.info(f"Metrics (including MAD and adjusted MAD metric) saved to {tsv_path}")
 
 
 def generate_plots(
@@ -290,13 +316,16 @@ def run_mad_calculation_pipeline(
     with open(filtered_samples_file, "w") as f:
         for sample in filtered_sample_ids:
             f.write(f"{sample}\n")
-    logging.info(f"Filtered sample IDs saved to {filtered_samples_file}")
+    logger.info(f"Filtered sample IDs saved to {filtered_samples_file}")
 
     return filtered_sample_ids, results_df
 
 
-def main():
-    args = parse_args()
+def main(args: t.Optional[argparse.Namespace] = None) -> None:
+    if args is None:
+        argparser = get_argparser()
+        args = argparser.parse_args()
+    logger.debug(f"Parsed arguments: {args}")
 
     filtered_samples, results_df = run_mad_calculation_pipeline(
         cnr_files=args.cnr_files,
@@ -307,11 +336,12 @@ def main():
         cns_files=args.cns_files,
         z_threshold=args.z_threshold,
     )
-    # Print filtered sample IDs to stdout.
-    print(f"Samples identified as noisy (modified z-score > {args.z_threshold}):")
+    # Log filtered sample IDs to stdout.
+    logger.info(f"Samples identified as noisy (modified z-score > {args.z_threshold}):")
     for sample in filtered_samples:
-        print(sample)
+        logger.info(sample)
 
 
 if __name__ == "__main__":
+    setup_logging()
     main()

@@ -101,7 +101,7 @@ def test_is_R_package_installed(package: str, should_exist: bool):
     assert actually_exists == should_exist
 
 
-@pytest.mark.xfailif(
+@pytest.mark.xfail(
     not shutil.which("Rscript"),
     reason="Rscript not found in PATH, failing test",
 )
