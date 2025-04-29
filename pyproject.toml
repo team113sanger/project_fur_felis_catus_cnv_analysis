@@ -1,8 +1,13 @@
 [tool.poetry]
 name = "fur_cnvkit"
-version = "0.1.0"
+version = "0.2.0"
 description = ""
-authors = ["Ian Vermes <iv3@sanger.ac.uk>"]
+authors = ["Bailey Francis <bf14@sanger.ac.uk>"]
+maintainers = [
+    "Bailey Francis <bf14@sanger.ac.uk>",
+    "Ian Vermes <iv3@sanger.ac.uk>",
+]
+
 readme = "README.md"
 packages = [{ include = "fur_cnvkit", from = "src" }]
 
