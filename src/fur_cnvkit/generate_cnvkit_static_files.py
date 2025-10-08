@@ -105,6 +105,14 @@ def get_argparser(
         ),
     )
     parser.add_argument(
+        "-x",
+        metavar="ACCESS_EXCLUDE_BED",
+        type=Path,
+        required=False,
+        help="BED file of regions to exclude when computing accessible regions "
+        "(passed to `cnvkit.py access -x`).",
+    )
+    parser.add_argument(
         "-o",
         metavar="OUTDIR",
         type=Path,
@@ -227,6 +235,18 @@ def generate_parameter_file(
     return output_parameter_file
 
 
+def validate_fasta(fasta: Path) -> Path:
+    if not is_fasta(fasta):
+        raise ValueError(f"{str(fasta)} is not a valid FASTA file. Check input data.")
+    return fasta
+
+
+def validate_bed(bed: Path) -> Path:
+    if not is_bed(bed):
+        raise ValueError(f"{str(bed)} is not a valid BED file. Check input data.")
+    return bed
+
+
 def main(args: t.Optional[argparse.Namespace] = None) -> None:
     # Get command line arguments
     logger.info("Starting generation of CNVKit static files ...")
@@ -238,18 +258,13 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
 
     validated_bams = validate_bam_files(args.b)
     exclude_file = args.e
-    if is_fasta(args.f):
-        reference_fasta = args.f
-    else:
-        raise ValueError(f"{str(args.f)} is not a valid FASTA file.")
+    reference_fasta = validate_fasta(args.f)
     unplaced_contig_prefixes = args.u
-    if is_bed(args.t):
-        baitset_bed = args.t
-    else:
-        raise ValueError(f"{str(args.t)} is not a valid FASTA file.")
+    baitset_bed = validate_bed(args.t)
     refflat_file = args.r
     sample_metadata_xlsx = args.m
     parameter_file_name = args.p
+    access_exclude_bed = validate_bed(args.x) if args.x else None
     outdir = args.o
 
     logger.debug(f"BAM files: {validated_bams}")
@@ -257,6 +272,11 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
     logger.debug(f"Baitset BED: {baitset_bed}")
     logger.debug(f"RefFlat file: {refflat_file}")
     logger.debug(f"Sample metadata Excel spreadsheet: {sample_metadata_xlsx}")
+    logger.debug(f"Parameter file name: {parameter_file_name}")
+    if access_exclude_bed is not None:
+        logger.debug(f"Access exclude BED: {access_exclude_bed}")
+    else:
+        logger.debug("No access exclude BED provided.")
     logger.debug(f"Outdir: {outdir}")
 
     logger.info(
@@ -273,7 +293,9 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
         filtered_bams = validated_bams
 
     # Run cnvkit.py access
-    access_bed = run_cnvkit_access(reference_fasta, outdir)
+    access_bed = run_cnvkit_access(
+        reference_fasta, outdir, exclude_bed=access_exclude_bed
+    )
 
     # Run cnvkit.py autobin
     target_bed_dict = run_cnvkit_autobin(
