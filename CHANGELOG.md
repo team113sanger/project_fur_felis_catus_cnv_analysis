@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.3.0] - 2025-10-08
+### Added
+- CLI argument `generate_cnvkit_static_files -x` for passing a bedfile through to `cnvkit.py access -x` and refining the set of antitarget regions generated 
+
 ## [0.2.0] - 2025-04-29
 ### Added
 - Added a unified CLI with a single entrypoint and improved command structure across all scripts
