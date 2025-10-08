@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "fur_cnvkit"
-version = "0.2.0"
+version = "0.3.0"
 description = ""
 authors = ["Bailey Francis <bf14@sanger.ac.uk>"]
 maintainers = [

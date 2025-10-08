@@ -417,12 +417,15 @@ def is_valid_filtered_genemetrics_file(file: Path) -> bool:
 # -----------------------------------------------------------------------------
 # CNVKit command wrappers
 # -----------------------------------------------------------------------------
-def run_cnvkit_access(reference_fasta: Path, outdir: Path) -> Path:
+def run_cnvkit_access(
+    reference_fasta: Path, outdir: Path, exclude_bed: Path = None
+) -> Path:
     """Run cnvkit.py access on a given reference FASTA file
 
     Args:
         reference_fasta (Path): Path to the reference FASTA file
         outdir (Path): Path to directory where output file will be stored
+        exclude_bed (Path, optional): BED file of regions to exclude (passed via `-x`).
 
     Returns:
         Path: Path to the output BED file containing sequence-accessible coordinates
@@ -437,7 +440,16 @@ def run_cnvkit_access(reference_fasta: Path, outdir: Path) -> Path:
         if skip_file_generation(output_bed_path, validator=is_bed):
             return output_bed_path
 
-        cmd = f"cnvkit.py access {str(reference_fasta)} -o {str(output_bed_path)}"
+        cmd_parts = ["cnvkit.py", "access", str(reference_fasta)]
+        if exclude_bed is not None:
+            if not is_bed(exclude_bed):
+                raise ValueError(
+                    f"{str(exclude_bed)} is not a valid BED file. Check input data."
+                )
+            cmd_parts.extend(["-x", str(exclude_bed)])
+        cmd_parts.extend(["-o", str(output_bed_path)])
+
+        cmd = " ".join(cmd_parts)
         run_command(cmd)
     else:
         raise ValueError(
