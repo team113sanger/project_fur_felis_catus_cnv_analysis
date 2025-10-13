@@ -30,7 +30,7 @@ logger = get_package_logger()
 def perform_normal_vs_normal_comparisons(
     normal_coverage_files: t.List[Path],
     reference_fasta: Path,
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
 ):
     logger.info("Performing normal vs normal comparisons ...")
@@ -45,7 +45,7 @@ def perform_normal_vs_normal_comparisons(
     # Map normal sample IDs to their corresponding study ID
     logger.info("Mapping normal sample IDs to study IDs ...")
     sample_study_dict = map_sample_ids_to_study_ids(
-        sample_ids=normal_sample_ids, sample_metadata_xlsx=sample_metadata_xlsx
+        sample_ids=normal_sample_ids, sample_metadata_file=sample_metadata_file
     )
 
     logger.debug(f"Sample study dictionary: {sample_study_dict}")
@@ -85,7 +85,7 @@ def perform_normal_vs_normal_comparisons(
             sample_ids=sample_ids,
             study_normal_coverage_files_dict=study_normal_coverage_files_dict,
             reference_fasta=reference_fasta,
-            sample_metadata_xlsx=sample_metadata_xlsx,
+            sample_metadata_file=sample_metadata_file,
             outdir=study_outdir,
         )
 
@@ -294,7 +294,7 @@ def perform_normal_vs_normal_comparisons_for_study(
     sample_ids: t.List[str],
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
     reference_fasta: Path,
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
 ):
     # Create a dictionary of genemetrics files for each reference sample
@@ -318,7 +318,7 @@ def perform_normal_vs_normal_comparisons_for_study(
                 reference_sample_id=reference_sample_id,
                 study_normal_coverage_files_dict=study_normal_coverage_files_dict,
                 reference_fasta=reference_fasta,
-                sample_metadata_xlsx=sample_metadata_xlsx,
+                sample_metadata_file=sample_metadata_file,
                 outdir=reference_sample_outdir,
             )
         )
@@ -440,7 +440,7 @@ def perform_normal_vs_normal_comparisons_for_sample(
     reference_sample_id: str,
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
     reference_fasta: Path,
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
 ):
     logger.info(
@@ -451,9 +451,7 @@ def perform_normal_vs_normal_comparisons_for_sample(
 
     # 1. Get the sex of the reference sample
     logger.info("Getting the sex for the reference sample ...")
-    reference_sample_sex = get_sample_sex(
-        reference_sample_id, sample_metadata_xlsx=sample_metadata_xlsx
-    )
+    reference_sample_sex = get_sample_sex(reference_sample_id, sample_metadata_file)
 
     logger.debug(f"Sex for {reference_sample_id}: {reference_sample_sex}")
 
@@ -490,7 +488,7 @@ def perform_normal_vs_normal_comparisons_for_sample(
         reference_sample_id=reference_sample_id,
         reference_sample_copy_number_reference_file=reference_sample_copy_number_reference_file,
         study_normal_coverage_files_dict=study_normal_coverage_files_dict,
-        sample_metadata_xlsx=sample_metadata_xlsx,
+        sample_metadata_file=sample_metadata_file,
         outdir=outdir,
     )
 
@@ -502,7 +500,7 @@ def compare_all_other_study_samples_to_reference_sample(
     reference_sample_id: str,
     reference_sample_copy_number_reference_file: Path,
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
 ):
     # Get a set of every other normal sample ID in the study to compare to the reference sample
@@ -542,7 +540,7 @@ def compare_all_other_study_samples_to_reference_sample(
 
         # Get the sex of the comparison sample
         comparison_sample_sex = get_sample_sex(
-            comparison_sample_id, sample_metadata_xlsx=sample_metadata_xlsx
+            comparison_sample_id, sample_metadata_file
         )
 
         # Run CNVKit genemetrics to compare the comparison sample to the reference sample

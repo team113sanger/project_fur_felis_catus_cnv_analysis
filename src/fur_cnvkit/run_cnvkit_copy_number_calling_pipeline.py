@@ -12,6 +12,7 @@ from fur_cnvkit.utils.fur_utils import (
     map_sample_ids_to_study_ids,
     split_file_list_by_sample_sex,
     get_sample_specific_files,
+    set_metadata_columns,
 )
 from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_batch,
@@ -551,6 +552,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
 
     # Extract metadata from the parameter file.
     metadata = extract_metadata_files_from_parameter_json(parameter_file)
+    set_metadata_columns(metadata.get("metadata_columns"))
     tumour_bam_list = metadata["tumour_bams"]
     sample_metadata_xlsx = metadata["sample_metadata_xlsx"]
     unplaced_contigs = metadata["unplaced_contig_prefixes"]
