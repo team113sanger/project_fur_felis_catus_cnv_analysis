@@ -176,6 +176,7 @@ def _get_metadata_tables(metadata_path: Path) -> t.Dict[str, pd.DataFrame]:
 
     return {study: df.copy() for study, df in _metadata_cache[cache_key].items()}
 
+
 # -----------------------------------------------
 # Functions for handling sample IDs
 # -----------------------------------------------
@@ -464,9 +465,7 @@ def determine_sample_sexes(
     # Use the helper function to extract the sex for each sample ID
     for sample_id in sample_ids:
         try:
-            sample_sex_dict[sample_id] = get_sample_sex(
-                sample_id, sample_metadata_file
-            )
+            sample_sex_dict[sample_id] = get_sample_sex(sample_id, sample_metadata_file)
         except ValueError as e:
             logger.error(str(e))
             raise
