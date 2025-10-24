@@ -462,7 +462,7 @@ def process_study(
         gain_threshold=gain_threshold,
         loss_threshold=loss_threshold,
     )
-    
+
     # Also, generate the study-level genemetrics summary including all samples (for completeness).
     generate_genemetrics_study_summary_csv(
         study_id=f"{study_id}_all_samples",
@@ -475,7 +475,7 @@ def process_study(
         gain_threshold=gain_threshold,
         loss_threshold=loss_threshold,
     )
-    
+
     logger.info(f"Study {study_id} processing complete.")
 
 
