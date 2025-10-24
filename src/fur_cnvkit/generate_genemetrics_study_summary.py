@@ -95,6 +95,85 @@ def get_argparser(
     return parser
 
 
+def _resolve_explicit_genemetrics_files(
+    explicit_files: t.Optional[t.Sequence[Path]],
+) -> tuple[list[Path], list[Path]]:
+    """
+    Expand and validate explicit genemetrics file paths, returning valid and missing entries.
+    """
+    valid_files: list[Path] = []
+    missing_files: list[Path] = []
+    if not explicit_files:
+        return valid_files, missing_files
+
+    for file_path in explicit_files:
+        expanded = file_path.expanduser()
+        if expanded.is_file():
+            valid_files.append(expanded)
+        else:
+            missing_files.append(expanded)
+    return valid_files, missing_files
+
+
+def _discover_genemetrics_files(
+    directory: t.Optional[Path], pattern: str
+) -> list[Path]:
+    """
+    Discover genemetrics files by globbing a directory with the provided pattern.
+    """
+    if directory is None:
+        return []
+
+    expanded_dir = directory.expanduser()
+    if not expanded_dir.is_dir():
+        raise ValueError(
+            f"Genemetrics directory '{expanded_dir}' does not exist or is not a directory."
+        )
+    discovered = sorted(expanded_dir.glob(pattern))
+    if not discovered:
+        logger.warning(
+            "Directory %s does not contain any files matching pattern '%s'.",
+            expanded_dir,
+            pattern,
+        )
+    return [path for path in discovered if path.is_file()]
+
+
+def _deduplicate_paths(paths: t.Iterable[Path]) -> list[Path]:
+    """
+    Resolve duplicate file paths.
+    """
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped.append(resolved)
+    deduped.sort(key=get_sample_id_from_file_path)
+    return deduped
+
+
+def _filter_duplicate_samples(paths: t.Iterable[Path]) -> tuple[list[Path], list[str]]:
+    """
+    Ensure that only one genemetrics file per sample is returned, tracking duplicates.
+    """
+    unique_files: list[Path] = []
+    duplicates: list[str] = []
+    seen_samples: set[str] = set()
+
+    for path in paths:
+        sample_id = get_sample_id_from_file_path(path)
+        if sample_id in seen_samples:
+            duplicates.append(sample_id)
+            continue
+        seen_samples.add(sample_id)
+        unique_files.append(path)
+
+    return unique_files, duplicates
+
+
 def _collect_genemetrics_files(
     explicit_files: t.Optional[t.Sequence[Path]],
     directory: t.Optional[Path],
@@ -103,31 +182,8 @@ def _collect_genemetrics_files(
     """
     Collect and de-duplicate genemetrics files supplied explicitly or via directory globbing.
     """
-    files: list[Path] = []
-    missing: list[Path] = []
-
-    if explicit_files:
-        for file_path in explicit_files:
-            expanded = file_path.expanduser()
-            if expanded.is_file():
-                files.append(expanded)
-            else:
-                missing.append(expanded)
-
-    if directory:
-        expanded_dir = directory.expanduser()
-        if not expanded_dir.is_dir():
-            raise ValueError(
-                f"Genemetrics directory '{expanded_dir}' does not exist or is not a directory."
-            )
-        discovered = sorted(expanded_dir.glob(pattern))
-        if not discovered:
-            logger.warning(
-                "Directory %s does not contain any files matching pattern '%s'.",
-                expanded_dir,
-                pattern,
-            )
-        files.extend(path for path in discovered if path.is_file())
+    explicit, missing = _resolve_explicit_genemetrics_files(explicit_files)
+    discovered = _discover_genemetrics_files(directory, pattern)
 
     if missing:
         logger.warning(
@@ -136,32 +192,14 @@ def _collect_genemetrics_files(
             ", ".join(str(path) for path in missing),
         )
 
-    if not files:
+    all_candidates = explicit + discovered
+    if not all_candidates:
         raise ValueError(
             "No genemetrics files found. Provide --genemetrics-files or --genemetrics-dir with matching files."
         )
 
-    dedup_paths: list[Path] = []
-    seen_paths: set[Path] = set()
-    for path in files:
-        resolved = path.resolve()
-        if resolved in seen_paths:
-            continue
-        seen_paths.add(resolved)
-        dedup_paths.append(resolved)
-
-    dedup_paths.sort(key=get_sample_id_from_file_path)
-
-    seen_samples: set[str] = set()
-    duplicates: list[str] = []
-    unique_files: list[Path] = []
-    for path in dedup_paths:
-        sample_id = get_sample_id_from_file_path(path)
-        if sample_id in seen_samples:
-            duplicates.append(sample_id)
-            continue
-        seen_samples.add(sample_id)
-        unique_files.append(path)
+    deduped = _deduplicate_paths(all_candidates)
+    unique_files, duplicates = _filter_duplicate_samples(deduped)
 
     if duplicates:
         logger.warning(
@@ -171,6 +209,53 @@ def _collect_genemetrics_files(
 
     logger.info("Using %d genemetrics files for summary generation.", len(unique_files))
     return unique_files
+
+
+def _read_baitset_genes(baitset_genes_file: Path) -> list[str]:
+    """
+    Return a list of baitset genes from the provided file, ensuring it is not empty.
+    """
+    with baitset_genes_file.open("r") as handle:
+        genes = [line.strip() for line in handle if line.strip()]
+    if not genes:
+        raise ValueError(
+            f"No gene symbols were found in baitset file '{baitset_genes_file}'."
+        )
+    return genes
+
+
+def _load_sample_series(
+    genemetrics_file: Path, baitset_genes: t.Sequence[str], skip_labels: set[str]
+) -> pd.Series:
+    """
+    Load gene-level log2 values for a single sample into a Series indexed by baitset genes.
+    """
+    sample_id = get_sample_id_from_file_path(genemetrics_file)
+    logger.info("Processing genemetrics file for sample %s ...", sample_id)
+    df_temp = pd.read_csv(genemetrics_file, sep="\t", usecols=[0, 4])
+    logger.debug("Initial data for sample %s:\n%s", sample_id, df_temp.head())
+
+    df_temp = df_temp[~df_temp["gene"].isin(skip_labels)]
+    df_temp["log2"] = pd.to_numeric(df_temp["log2"], errors="coerce")
+    df_temp = df_temp.groupby("gene", as_index=False).mean()
+    df_temp.set_index("gene", inplace=True)
+    df_temp = df_temp.reindex(baitset_genes)
+    return df_temp["log2"].rename(sample_id)
+
+
+def _apply_threshold_columns(
+    cohort_df: pd.DataFrame,
+    gain_threshold: t.Optional[float],
+    loss_threshold: t.Optional[float],
+) -> pd.DataFrame:
+    """
+    Add gain/loss threshold columns when thresholds are provided.
+    """
+    if gain_threshold is not None:
+        cohort_df["gain_threshold"] = gain_threshold
+    if loss_threshold is not None:
+        cohort_df["loss_threshold"] = loss_threshold
+    return cohort_df
 
 
 def generate_genemetrics_study_summary_csv(
@@ -192,29 +277,16 @@ def generate_genemetrics_study_summary_csv(
     output_csv_path = outdir / f"{study_id}.genemetrics_study_summary.csv"
     logger.debug("Output CSV path: %s", output_csv_path)
 
-    with baitset_genes_file.open("r") as handle:
-        baitset_genes_list = [line.strip() for line in handle if line.strip()]
-    if not baitset_genes_list:
-        raise ValueError(
-            f"No gene symbols were found in baitset file '{baitset_genes_file}'."
-        )
+    baitset_genes_list = _read_baitset_genes(baitset_genes_file)
     logger.debug("Loaded %d baitset genes.", len(baitset_genes_list))
 
     sample_series_list: list[pd.Series] = []
     skip_labels = {"none", "unk", "incmpl", "cmpl"}
 
     for genemetrics_file in genemetrics_files:
-        sample_id = get_sample_id_from_file_path(genemetrics_file)
-        logger.info("Processing genemetrics file for sample %s ...", sample_id)
-        df_temp = pd.read_csv(genemetrics_file, sep="\t", usecols=[0, 4])
-        logger.debug("Initial data for sample %s:\n%s", sample_id, df_temp.head())
-
-        df_temp = df_temp[~df_temp["gene"].isin(skip_labels)]
-        df_temp["log2"] = pd.to_numeric(df_temp["log2"], errors="coerce")
-        df_temp = df_temp.groupby("gene", as_index=False).mean()
-        df_temp.set_index("gene", inplace=True)
-        df_temp = df_temp.reindex(baitset_genes_list)
-        sample_series_list.append(df_temp["log2"].rename(sample_id))
+        sample_series_list.append(
+            _load_sample_series(genemetrics_file, baitset_genes_list, skip_labels)
+        )
 
     if not sample_series_list:
         raise ValueError(
@@ -222,10 +294,9 @@ def generate_genemetrics_study_summary_csv(
         )
 
     cohort_df = pd.concat(sample_series_list, axis=1).T
-    if gain_threshold is not None:
-        cohort_df["gain_threshold"] = gain_threshold
-    if loss_threshold is not None:
-        cohort_df["loss_threshold"] = loss_threshold
+    cohort_df = _apply_threshold_columns(
+        cohort_df, gain_threshold=gain_threshold, loss_threshold=loss_threshold
+    )
     cohort_df.to_csv(output_csv_path)
     logger.info("Study summary CSV created at %s", output_csv_path)
     return cohort_df

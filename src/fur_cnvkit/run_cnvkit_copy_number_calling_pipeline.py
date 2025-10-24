@@ -7,7 +7,6 @@ import pandas as pd
 from fur_cnvkit import constants
 from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_parameter_json,
-    get_sample_id_from_file_path,
     get_sample_ids_for_file_list,
     map_sample_ids_to_study_ids,
     split_file_list_by_sample_sex,
