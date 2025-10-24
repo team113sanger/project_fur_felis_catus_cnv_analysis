@@ -323,7 +323,8 @@ def test_map_sample_ids_to_study_ids_with_study_column(tmp_path):
     )
 
     result = map_sample_ids_to_study_ids({"S1", "S2", "S3"}, metadata_file)
-    assert result == {"StudyA": ["S1", "S3"], "StudyB": ["S2"]}
+    expected = {"StudyA": {"S1", "S3"}, "StudyB": {"S2"}}
+    assert {study: set(samples) for study, samples in result.items()} == expected
 
 
 def test_map_sample_ids_to_study_ids_missing_sample():
