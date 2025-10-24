@@ -24,6 +24,9 @@ from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_scatter,
 )
 from fur_cnvkit.calculate_mad import run_mad_calculation_pipeline
+from fur_cnvkit.generate_genemetrics_study_summary import (
+    generate_genemetrics_study_summary_csv,
+)
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
 # Set up logging
@@ -336,67 +339,6 @@ def process_sex_group(
     return sex_genemetrics_records
 
 
-def generate_genemetrics_study_summary_csv(
-    study_id: str,
-    genemetrics_files: t.List[Path],
-    baitset_genes_file: Path,
-    outdir: Path,
-) -> pd.DataFrame:
-    """
-    Generate a study-level CSV summarizing genemetrics data.
-
-    Steps:
-      - Read baitset gene symbols.
-      - Process each sample's genemetrics file to extract gene-level log2 data.
-      - Aggregate duplicate gene entries by computing the mean.
-      - Concatenate all sample data into a cohort-level DataFrame.
-      - Save the DataFrame as a CSV.
-
-    Returns:
-      The cohort DataFrame.
-    """
-    logger.info(f"Generating study summary CSV for study {study_id} ...")
-    output_csv_file_name = f"{study_id}.genemetrics_study_summary.csv"
-    output_csv_file_path = outdir / output_csv_file_name
-    logger.debug(f"Output CSV path: {output_csv_file_path}")
-
-    # Load baitset genes.
-    with open(baitset_genes_file, "r") as f:
-        baitset_genes_list = [line.strip() for line in f.readlines()]
-    logger.debug(f"Baitset genes (first 5): {baitset_genes_list[:5]}")
-
-    sample_series_list = []
-    # Labels to skip in the genemetrics file.
-    skip_labels = {"none", "unk", "incmpl", "cmpl"}
-
-    # Process each genemetrics file.
-    for genemetrics_file in genemetrics_files:
-        sample_id = get_sample_id_from_file_path(genemetrics_file)
-        logger.info(f"Processing genemetrics file for sample {sample_id} ...")
-        df_temp = pd.read_csv(genemetrics_file, sep="\t", usecols=[0, 4])
-        logger.debug(f"Initial data for sample {sample_id}:\n{df_temp.head()}")
-
-        # Filter out unwanted labels.
-        df_temp = df_temp[~df_temp["gene"].isin(skip_labels)]
-        # Convert log2 values to numeric.
-        df_temp["log2"] = pd.to_numeric(df_temp["log2"], errors="coerce")
-        # Aggregate duplicate gene entries by taking the mean.
-        df_temp = df_temp.groupby("gene", as_index=False).mean()
-        # Set the gene column as the index.
-        df_temp.set_index("gene", inplace=True)
-        # Reindex the DataFrame based on the baitset gene list.
-        df_temp = df_temp.reindex(baitset_genes_list)
-        # Rename the log2 column series to the sample_id.
-        s = df_temp["log2"].rename(sample_id)
-        sample_series_list.append(s)
-
-    # Concatenate sample Series into a cohort DataFrame (samples are rows).
-    cohort_df = pd.concat(sample_series_list, axis=1).T
-    cohort_df.to_csv(output_csv_file_path)
-    logger.info(f"Study summary CSV created at {output_csv_file_path}")
-    return cohort_df
-
-
 def process_study(
     study_id: str,
     sample_ids: t.List[str],
@@ -518,7 +460,23 @@ def process_study(
         genemetrics_files=filtered_study_genemetrics_files,
         baitset_genes_file=baitset_genes_file,
         outdir=study_outdir,
+        gain_threshold=gain_threshold,
+        loss_threshold=loss_threshold,
     )
+    
+    # Also, generate the study-level genemetrics summary including all samples (for completeness).
+    generate_genemetrics_study_summary_csv(
+        study_id=f"{study_id}_all_samples",
+        genemetrics_files=[
+            genemetrics_file
+            for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
+        ],
+        baitset_genes_file=baitset_genes_file,
+        outdir=study_outdir,
+        gain_threshold=gain_threshold,
+        loss_threshold=loss_threshold,
+    )
+    
     logger.info(f"Study {study_id} processing complete.")
 
 

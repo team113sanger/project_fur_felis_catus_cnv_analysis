@@ -5,6 +5,7 @@ from fur_cnvkit import (
     calculate_mad,
     generate_cnvkit_static_files,
     generate_copy_number_reference,
+    generate_genemetrics_study_summary,
     generate_oncoprint,
     run_cnvkit_copy_number_calling_pipeline,
 )
@@ -31,6 +32,7 @@ def main():
     _ = calculate_mad.get_argparser(subparser=subparsers)
     _ = generate_cnvkit_static_files.get_argparser(subparser=subparsers)
     _ = generate_copy_number_reference.get_argparser(subparser=subparsers)
+    _ = generate_genemetrics_study_summary.get_argparser(subparser=subparsers)
     _ = generate_oncoprint.get_argparser(subparser=subparsers)
     _ = run_cnvkit_copy_number_calling_pipeline.get_argparser(subparser=subparsers)
 
@@ -50,6 +52,8 @@ def main():
             exit_code = generate_cnvkit_static_files.main(args)
         case generate_copy_number_reference.COMMAND_NAME:
             exit_code = generate_copy_number_reference.main(args)
+        case generate_genemetrics_study_summary.COMMAND_NAME:
+            exit_code = generate_genemetrics_study_summary.main(args)
         case generate_oncoprint.COMMAND_NAME:
             exit_code = generate_oncoprint.main(args)
         case run_cnvkit_copy_number_calling_pipeline.COMMAND_NAME:
