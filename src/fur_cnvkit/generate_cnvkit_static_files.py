@@ -204,6 +204,101 @@ def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
     return baitset_genes_file_path
 
 
+def _maybe_override_metadata_columns(
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]]
+) -> None:
+    if metadata_columns is not None:
+        set_metadata_columns(metadata_columns)
+
+
+def _categorise_bams(
+    bam_files: t.List[Path], sample_metadata_xlsx: Path
+) -> t.Tuple[t.List[str], t.List[str]]:
+    tn_status_bam_dict = categorise_files_by_tumour_normal_status(
+        bam_files, sample_metadata_xlsx
+    )
+    tumour_bams = [str(bam) for bam in tn_status_bam_dict["T"]]
+    normal_bams = [str(bam) for bam in tn_status_bam_dict["N"]]
+    return tumour_bams, normal_bams
+
+
+def _filter_metadata_columns(
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]]
+) -> t.Optional[t.Dict[str, str]]:
+    if not metadata_columns:
+        return None
+    filtered = {
+        key: value for key, value in metadata_columns.items() if value is not None
+    }
+    return filtered or None
+
+
+def _build_parameter_data(
+    all_bams: t.List[str],
+    tumour_bams: t.List[str],
+    normal_bams: t.List[str],
+    reference_fasta: Path,
+    unplaced_contig_prefixes: t.List[str],
+    baitset_bed: Path,
+    refflat_file: Path,
+    sample_metadata_xlsx: Path,
+    access_bed: Path,
+    targets_bed: Path,
+    antitargets_bed: Path,
+    baitset_genes_file: Path,
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]],
+) -> t.Dict[str, t.Any]:
+    parameter_data = {
+        "all_bams": all_bams,
+        "tumour_bams": tumour_bams,
+        "normal_bams": normal_bams,
+        "reference_fasta": str(reference_fasta),
+        "unplaced_contig_prefixes": unplaced_contig_prefixes,
+        "baitset_bed": str(baitset_bed),
+        "refflat_file": str(refflat_file),
+        "sample_metadata_xlsx": str(sample_metadata_xlsx),
+        "access_bed": str(access_bed),
+        "targets_bed": str(targets_bed),
+        "antitargets_bed": str(antitargets_bed),
+        "baitset_genes_file": str(baitset_genes_file),
+    }
+
+    metadata_columns_filtered = _filter_metadata_columns(metadata_columns)
+    if metadata_columns_filtered is not None:
+        parameter_data["metadata_columns"] = metadata_columns_filtered
+
+    return parameter_data
+
+
+def _normalise_parameter_file_name(parameter_file_name: str) -> str:
+    endswith_default = parameter_file_name.endswith(DEFAULT_PARAMETER_FILE_NAME)
+    is_default = parameter_file_name == DEFAULT_PARAMETER_FILE_NAME
+    if endswith_default and not is_default:
+        prefix = parameter_file_name.replace(DEFAULT_PARAMETER_FILE_NAME, "").rstrip(
+            "."
+        )
+        return f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+    if not endswith_default:
+        prefix = parameter_file_name.rstrip(".")
+        return f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+    return parameter_file_name
+
+
+def _write_parameter_file(
+    output_path: Path, parameter_data: t.Dict[str, t.Any]
+) -> Path:
+    logger.info(f"Writing parameter file to {str(output_path)}")
+    try:
+        with output_path.open("w") as json_file:
+            json.dump(parameter_data, json_file, indent=4)
+            json_file.write("\n")
+        logger.info("Successfully wrote parameter file.")
+    except Exception as e:
+        logger.warning(f"Error writing parameter file: {e}")
+        raise
+    return output_path
+
+
 def generate_parameter_file(
     bam_files: t.List[Path],
     reference_fasta: Path,
@@ -221,66 +316,31 @@ def generate_parameter_file(
 ) -> Path:
     logger.info("Generating parameter file containing CNVKit static files...")
 
-    if metadata_columns is not None:
-        set_metadata_columns(metadata_columns)
+    _maybe_override_metadata_columns(metadata_columns)
 
-    # Categorise the BAM files based on their tumour/normal status
-    tn_status_bam_dict = categorise_files_by_tumour_normal_status(
-        bam_files, sample_metadata_xlsx
+    tumour_bams, normal_bams = _categorise_bams(bam_files, sample_metadata_xlsx)
+    all_bams = [str(bam) for bam in bam_files]
+
+    parameter_data = _build_parameter_data(
+        all_bams=all_bams,
+        tumour_bams=tumour_bams,
+        normal_bams=normal_bams,
+        reference_fasta=reference_fasta,
+        unplaced_contig_prefixes=unplaced_contig_prefixes,
+        baitset_bed=baitset_bed,
+        refflat_file=refflat_file,
+        sample_metadata_xlsx=sample_metadata_xlsx,
+        access_bed=access_bed,
+        targets_bed=targets_bed,
+        antitargets_bed=antitargets_bed,
+        baitset_genes_file=baitset_genes_file,
+        metadata_columns=metadata_columns,
     )
-    tumour_bams = [str(bam) for bam in tn_status_bam_dict["T"]]
-    normal_bams = [str(bam) for bam in tn_status_bam_dict["N"]]
 
-    # Initialise a dictionary containing the parameter file data
-    parameter_data = {
-        "all_bams": [str(bam) for bam in bam_files],
-        "tumour_bams": tumour_bams,
-        "normal_bams": normal_bams,
-        "reference_fasta": str(reference_fasta),
-        "unplaced_contig_prefixes": unplaced_contig_prefixes,
-        "baitset_bed": str(baitset_bed),
-        "refflat_file": str(refflat_file),
-        "sample_metadata_xlsx": str(sample_metadata_xlsx),
-        "access_bed": str(access_bed),
-        "targets_bed": str(targets_bed),
-        "antitargets_bed": str(antitargets_bed),
-        "baitset_genes_file": str(baitset_genes_file),
-    }
-    if metadata_columns:
-        metadata_columns_filtered = {
-            key: value for key, value in metadata_columns.items() if value is not None
-        }
-        if metadata_columns_filtered:
-            parameter_data["metadata_columns"] = metadata_columns_filtered
+    normalised_parameter_filename = _normalise_parameter_file_name(parameter_file_name)
+    output_parameter_file = outdir / normalised_parameter_filename
 
-    # Construct output parameter file path (default: parameters.json from argparse)
-    endswith_default = parameter_file_name.endswith(DEFAULT_PARAMETER_FILE_NAME)
-    is_default = parameter_file_name == DEFAULT_PARAMETER_FILE_NAME
-    if endswith_default and not is_default:
-        # E.g "my_parameter_file.parameters.json" -> "my_parameter_file.parameters.json"
-        prefix = parameter_file_name.replace(DEFAULT_PARAMETER_FILE_NAME, "").rstrip(
-            "."
-        )
-        parameter_file_name = f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
-    elif not endswith_default:
-        # E.g "my_parameter_file" -> "my_parameter_file.parameters.json"
-        prefix = parameter_file_name.rstrip(".")
-        parameter_file_name = f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
-
-    output_parameter_file = outdir / parameter_file_name
-
-    # Write data to output parameter file path
-    logger.info(f"Writing parameter file to {str(output_parameter_file)}")
-    try:
-        with output_parameter_file.open("w") as json_file:
-            json.dump(parameter_data, json_file, indent=4)
-            json_file.write("\n")
-        logger.info("Successfully wrote parameter file.")
-    except Exception as e:
-        logger.warning(f"Error writing parameter file: {e}")
-        raise
-
-    return output_parameter_file
+    return _write_parameter_file(output_parameter_file, parameter_data)
 
 
 def validate_fasta(fasta: Path) -> Path:
