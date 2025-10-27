@@ -9,6 +9,8 @@ from fur_cnvkit.utils.file_format_checker import is_fasta, is_bed, validate_bam_
 from fur_cnvkit.utils.fur_utils import (
     remove_unwanted_sample_files,
     categorise_files_by_tumour_normal_status,
+    set_metadata_columns,
+    DEFAULT_METADATA_COLUMNS,
 )
 
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
@@ -90,7 +92,43 @@ def get_argparser(
         metavar="METADATA",
         type=Path,
         required=True,
-        help="Path to sample metadata Excel spreadsheet.",
+        help="Path to sample metadata file (Excel, TSV, or CSV).",
+    )
+    parser.add_argument(
+        "--metadata-sample-id-column",
+        type=str,
+        default=DEFAULT_METADATA_COLUMNS.sample_id,
+        help=(
+            "Column name containing sample identifiers in the metadata file. "
+            f"Default: '{DEFAULT_METADATA_COLUMNS.sample_id}'."
+        ),
+    )
+    parser.add_argument(
+        "--metadata-tumour-normal-column",
+        type=str,
+        default=DEFAULT_METADATA_COLUMNS.tumour_normal,
+        help=(
+            "Column name describing tumour/normal status. "
+            f"Default: '{DEFAULT_METADATA_COLUMNS.tumour_normal}'."
+        ),
+    )
+    parser.add_argument(
+        "--metadata-sex-column",
+        type=str,
+        default=DEFAULT_METADATA_COLUMNS.sex,
+        help=(
+            "Column name describing sample sex (values should be M/F/U). "
+            f"Default: '{DEFAULT_METADATA_COLUMNS.sex}'."
+        ),
+    )
+    parser.add_argument(
+        "--metadata-study-column",
+        type=str,
+        default=DEFAULT_METADATA_COLUMNS.study,
+        help=(
+            "Optional column name describing study/group identifiers. "
+            "If omitted, Excel sheet names or a single 'default' cohort will be used."
+        ),
     )
     parser.add_argument(
         "-p",
@@ -166,8 +204,39 @@ def generate_baitset_genes_file(targets_bed: Path, outdir: Path) -> Path:
     return baitset_genes_file_path
 
 
-def generate_parameter_file(
-    bam_files: t.List[Path],
+def _maybe_override_metadata_columns(
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]]
+) -> None:
+    if metadata_columns is not None:
+        set_metadata_columns(metadata_columns)
+
+
+def _categorise_bams(
+    bam_files: t.List[Path], sample_metadata_xlsx: Path
+) -> t.Tuple[t.List[str], t.List[str]]:
+    tn_status_bam_dict = categorise_files_by_tumour_normal_status(
+        bam_files, sample_metadata_xlsx
+    )
+    tumour_bams = [str(bam) for bam in tn_status_bam_dict["T"]]
+    normal_bams = [str(bam) for bam in tn_status_bam_dict["N"]]
+    return tumour_bams, normal_bams
+
+
+def _filter_metadata_columns(
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]]
+) -> t.Optional[t.Dict[str, str]]:
+    if not metadata_columns:
+        return None
+    filtered = {
+        key: value for key, value in metadata_columns.items() if value is not None
+    }
+    return filtered or None
+
+
+def _build_parameter_data(
+    all_bams: t.List[str],
+    tumour_bams: t.List[str],
+    normal_bams: t.List[str],
     reference_fasta: Path,
     unplaced_contig_prefixes: t.List[str],
     baitset_bed: Path,
@@ -177,21 +246,10 @@ def generate_parameter_file(
     targets_bed: Path,
     antitargets_bed: Path,
     baitset_genes_file: Path,
-    parameter_file_name: str,
-    outdir: Path,
-) -> Path:
-    logger.info("Generating parameter file containing CNVKit static files...")
-
-    # Categorise the BAM files based on their tumour/normal status
-    tn_status_bam_dict = categorise_files_by_tumour_normal_status(
-        bam_files, sample_metadata_xlsx
-    )
-    tumour_bams = [str(bam) for bam in tn_status_bam_dict["T"]]
-    normal_bams = [str(bam) for bam in tn_status_bam_dict["N"]]
-
-    # Initialise a dictionary containing the parameter file data
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]],
+) -> t.Dict[str, t.Any]:
     parameter_data = {
-        "all_bams": [str(bam) for bam in bam_files],
+        "all_bams": all_bams,
         "tumour_bams": tumour_bams,
         "normal_bams": normal_bams,
         "reference_fasta": str(reference_fasta),
@@ -205,34 +263,84 @@ def generate_parameter_file(
         "baitset_genes_file": str(baitset_genes_file),
     }
 
-    # Construct output parameter file path (default: parameters.json from argparse)
+    metadata_columns_filtered = _filter_metadata_columns(metadata_columns)
+    if metadata_columns_filtered is not None:
+        parameter_data["metadata_columns"] = metadata_columns_filtered
+
+    return parameter_data
+
+
+def _normalise_parameter_file_name(parameter_file_name: str) -> str:
     endswith_default = parameter_file_name.endswith(DEFAULT_PARAMETER_FILE_NAME)
     is_default = parameter_file_name == DEFAULT_PARAMETER_FILE_NAME
     if endswith_default and not is_default:
-        # E.g "my_parameter_file.parameters.json" -> "my_parameter_file.parameters.json"
         prefix = parameter_file_name.replace(DEFAULT_PARAMETER_FILE_NAME, "").rstrip(
             "."
         )
-        parameter_file_name = f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
-    elif not endswith_default:
-        # E.g "my_parameter_file" -> "my_parameter_file.parameters.json"
+        return f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+    if not endswith_default:
         prefix = parameter_file_name.rstrip(".")
-        parameter_file_name = f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+        return f"{prefix}.{DEFAULT_PARAMETER_FILE_NAME}"
+    return parameter_file_name
 
-    output_parameter_file = outdir / parameter_file_name
 
-    # Write data to output parameter file path
-    logger.info(f"Writing parameter file to {str(output_parameter_file)}")
+def _write_parameter_file(
+    output_path: Path, parameter_data: t.Dict[str, t.Any]
+) -> Path:
+    logger.info(f"Writing parameter file to {str(output_path)}")
     try:
-        with output_parameter_file.open("w") as json_file:
+        with output_path.open("w") as json_file:
             json.dump(parameter_data, json_file, indent=4)
             json_file.write("\n")
         logger.info("Successfully wrote parameter file.")
     except Exception as e:
         logger.warning(f"Error writing parameter file: {e}")
         raise
+    return output_path
 
-    return output_parameter_file
+
+def generate_parameter_file(
+    bam_files: t.List[Path],
+    reference_fasta: Path,
+    unplaced_contig_prefixes: t.List[str],
+    baitset_bed: Path,
+    refflat_file: Path,
+    sample_metadata_xlsx: Path,
+    access_bed: Path,
+    targets_bed: Path,
+    antitargets_bed: Path,
+    baitset_genes_file: Path,
+    parameter_file_name: str,
+    outdir: Path,
+    metadata_columns: t.Optional[t.Dict[str, t.Optional[str]]] = None,
+) -> Path:
+    logger.info("Generating parameter file containing CNVKit static files...")
+
+    _maybe_override_metadata_columns(metadata_columns)
+
+    tumour_bams, normal_bams = _categorise_bams(bam_files, sample_metadata_xlsx)
+    all_bams = [str(bam) for bam in bam_files]
+
+    parameter_data = _build_parameter_data(
+        all_bams=all_bams,
+        tumour_bams=tumour_bams,
+        normal_bams=normal_bams,
+        reference_fasta=reference_fasta,
+        unplaced_contig_prefixes=unplaced_contig_prefixes,
+        baitset_bed=baitset_bed,
+        refflat_file=refflat_file,
+        sample_metadata_xlsx=sample_metadata_xlsx,
+        access_bed=access_bed,
+        targets_bed=targets_bed,
+        antitargets_bed=antitargets_bed,
+        baitset_genes_file=baitset_genes_file,
+        metadata_columns=metadata_columns,
+    )
+
+    normalised_parameter_filename = _normalise_parameter_file_name(parameter_file_name)
+    output_parameter_file = outdir / normalised_parameter_filename
+
+    return _write_parameter_file(output_parameter_file, parameter_data)
 
 
 def validate_fasta(fasta: Path) -> Path:
@@ -266,12 +374,40 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
     parameter_file_name = args.p
     access_exclude_bed = validate_bed(args.x) if args.x else None
     outdir = args.o
+    metadata_columns_input = {
+        "sample_id": args.metadata_sample_id_column,
+        "tumour_normal": args.metadata_tumour_normal_column,
+        "sex": args.metadata_sex_column,
+        "study": args.metadata_study_column,
+    }
+    # Configure metadata parsing for downstream utilities.
+    set_metadata_columns(metadata_columns_input)
+    default_metadata_columns = {
+        "sample_id": DEFAULT_METADATA_COLUMNS.sample_id,
+        "tumour_normal": DEFAULT_METADATA_COLUMNS.tumour_normal,
+        "sex": DEFAULT_METADATA_COLUMNS.sex,
+        "study": DEFAULT_METADATA_COLUMNS.study,
+    }
+    metadata_columns_clean = {
+        key: value for key, value in metadata_columns_input.items() if value is not None
+    }
+    default_columns_clean = {
+        key: value
+        for key, value in default_metadata_columns.items()
+        if value is not None
+    }
+    metadata_columns_for_parameter = (
+        metadata_columns_clean
+        if metadata_columns_clean != default_columns_clean
+        else None
+    )
 
     logger.debug(f"BAM files: {validated_bams}")
     logger.debug(f"Reference FASTA: {reference_fasta}")
     logger.debug(f"Baitset BED: {baitset_bed}")
     logger.debug(f"RefFlat file: {refflat_file}")
-    logger.debug(f"Sample metadata Excel spreadsheet: {sample_metadata_xlsx}")
+    logger.debug(f"Sample metadata file: {sample_metadata_xlsx}")
+    logger.debug(f"Metadata column configuration: {metadata_columns_input}")
     logger.debug(f"Parameter file name: {parameter_file_name}")
     if access_exclude_bed is not None:
         logger.debug(f"Access exclude BED: {access_exclude_bed}")
@@ -317,6 +453,7 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
         targets_bed=target_bed_dict["target"],
         antitargets_bed=target_bed_dict["antitarget"],
         baitset_genes_file=baitset_genes_file,
+        metadata_columns=metadata_columns_for_parameter,
         parameter_file_name=parameter_file_name,
         outdir=outdir,
     )

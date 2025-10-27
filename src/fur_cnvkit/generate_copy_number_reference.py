@@ -14,6 +14,7 @@ from fur_cnvkit.utils.fur_utils import (
     extract_metadata_files_from_parameter_json,
     split_file_list_by_sample_sex,
     get_sample_ids_for_file_list,
+    set_metadata_columns,
 )
 from fur_cnvkit.utils.logging_utils import setup_logging, get_package_logger
 
@@ -243,6 +244,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
 
     # Extract metadata from the parameter file.
     metadata = extract_metadata_files_from_parameter_json(parameter_file)
+    set_metadata_columns(metadata.get("metadata_columns"))
     normal_bams = metadata["normal_bams"]
     reference_fasta = metadata["reference_fasta"]
     baitset_bed = metadata["baitset_bed"]
