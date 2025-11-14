@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import typing as t
 
@@ -510,45 +510,38 @@ def compare_all_other_study_samples_to_reference_sample(
 
     other_sample_ids = get_other_sample_ids(study_normal_coverage_files_dict.keys())
 
-    # Build tuples of arguments for each worker
-    worker_args = [
-        (
-            reference_sample_id,
-            reference_sample_copy_number_reference_file,
-            comparison_sample_id,
-            study_normal_coverage_files_dict[
-                comparison_sample_id
-            ],  # coverage files for comparison sample
-            sample_metadata_file,
-            outdir,
-        )
-        for comparison_sample_id in other_sample_ids
-    ]
-
-    # Run comparisons in parallel and collect genemetrics files
+    # Compare each other sample to the reference sample in parallel and collect the genemetrics files
     with ProcessPoolExecutor() as executor:
-        genemetrics_files = list(
-            executor.map(_compare_sample_to_reference, worker_args)
-        )
+        futures = [
+            executor.submit(
+                _compare_sample_to_reference,
+                reference_sample_id,
+                reference_sample_copy_number_reference_file,
+                comparison_sample_id,
+                study_normal_coverage_files_dict[comparison_sample_id],
+                sample_metadata_file,
+                outdir,
+            )
+            for comparison_sample_id in other_sample_ids
+        ]
+        genemetrics_files = [future.result() for future in as_completed(futures)]
 
     return genemetrics_files
 
 
-def _compare_sample_to_reference(args: t.Tuple):
-    (
-        reference_sample_id,
-        reference_sample_copy_number_reference_file,
-        comparison_sample_id,
-        comparison_sample_coverage_files,
-        sample_metadata_file,
-        outdir,
-    ) = args
-
+def _compare_sample_to_reference(
+    reference_sample_id: str,
+    reference_sample_copy_number_reference_file: Path,
+    comparison_sample_id: str,
+    comparison_sample_coverage_files: t.List[Path],
+    sample_metadata_file: Path,
+    outdir: Path,
+):
     logger.info(
         f"Comparing sample {comparison_sample_id} to reference sample {reference_sample_id} ..."
     )
 
-    # Validate comparison sample coverage files
+    # Get the coverage files for the comparison sample
     (
         comparison_sample_target_coverage_file,
         comparison_sample_antitarget_coverage_file,
@@ -579,4 +572,5 @@ def _compare_sample_to_reference(args: t.Tuple):
         sex=comparison_sample_sex,
     )
 
+    # Add the genemetircs file to the list
     return comparison_sample_genemetrics_file
