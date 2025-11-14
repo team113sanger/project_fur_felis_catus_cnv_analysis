@@ -33,6 +33,7 @@ def perform_normal_vs_normal_comparisons(
     reference_fasta: Path,
     sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     logger.info("Performing normal vs normal comparisons ...")
     logger.debug(f"Normal coverage files: {normal_coverage_files}")
@@ -88,6 +89,7 @@ def perform_normal_vs_normal_comparisons(
             reference_fasta=reference_fasta,
             sample_metadata_file=sample_metadata_file,
             outdir=study_outdir,
+            max_workers=max_workers,
         )
 
         # Add the collated log2 ratios CSV file to the dictionary
@@ -297,6 +299,7 @@ def perform_normal_vs_normal_comparisons_for_study(
     reference_fasta: Path,
     sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     # Create a dictionary of genemetrics files for each reference sample
     # Key: reference sample ID
@@ -321,6 +324,7 @@ def perform_normal_vs_normal_comparisons_for_study(
                 reference_fasta=reference_fasta,
                 sample_metadata_file=sample_metadata_file,
                 outdir=reference_sample_outdir,
+                max_workers=max_workers,
             )
         )
 
@@ -443,6 +447,7 @@ def perform_normal_vs_normal_comparisons_for_sample(
     reference_fasta: Path,
     sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     logger.info(
         f"Performing normal vs normal comparisons for sample {reference_sample_id} ..."
@@ -491,6 +496,7 @@ def perform_normal_vs_normal_comparisons_for_sample(
         study_normal_coverage_files_dict=study_normal_coverage_files_dict,
         sample_metadata_file=sample_metadata_file,
         outdir=outdir,
+        max_workers=max_workers,
     )
 
     # 5. Return the genemetrics files for the comparison samples
@@ -503,6 +509,7 @@ def compare_all_other_study_samples_to_reference_sample(
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
     sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     # Get a set of every other normal sample ID in the study to compare to the reference sample
     def get_other_sample_ids(sample_ids):
@@ -511,7 +518,7 @@ def compare_all_other_study_samples_to_reference_sample(
     other_sample_ids = get_other_sample_ids(study_normal_coverage_files_dict.keys())
 
     # Compare each other sample to the reference sample in parallel and collect the genemetrics files
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(
                 _compare_sample_to_reference,
