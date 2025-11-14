@@ -1,5 +1,6 @@
 import typing as t
 import argparse
+import os
 from pathlib import Path
 import multiprocessing
 
@@ -106,6 +107,13 @@ def get_argparser(  # noqa: C901
         dest="max_cpus",
         help="Maximum number of CPUs to use. If specified without a value, all available CPUs will be used. Default is 1.",
     )
+
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="Maximum number of normal-vs-normal worker processes to run concurrently. Defaults to min(requested CPUs, available CPUs).",
+    )
     return parser
 
 
@@ -173,6 +181,7 @@ def generate_reference_for_sex(
     antitargets_bed: Path,
     sample_metadata_xlsx: Path,
     max_cpus: t.Optional[int] = None,
+    threads: t.Optional[int] = None,
 ):
     """
     For a given sex, generate coverage files, perform normal vs. normal comparisons,
@@ -205,6 +214,7 @@ def generate_reference_for_sex(
         reference_fasta,
         sample_metadata_xlsx,
         normal_vs_normal_dir,
+        max_workers=threads,
     )
     logger.debug(f"Filtered coverage files for {sex}: {filtered_coverage_files}")
 
@@ -238,6 +248,9 @@ def main(args: t.Optional[argparse.Namespace] = None):
     parameter_file = args.parameter_file
     outdir = args.outdir
     max_cpus = args.max_cpus
+    threads = args.threads
+    if threads is not None:
+        threads = max(1, min(threads, os.cpu_count() or 1))
 
     logger.debug(f"Parameter file: {parameter_file}")
     logger.debug(f"Outdir: {outdir}")
@@ -290,6 +303,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
             antitargets_bed=antitargets_bed,
             sample_metadata_xlsx=sample_metadata_xlsx,
             max_cpus=max_cpus,
+            threads=threads,
         )
 
 
