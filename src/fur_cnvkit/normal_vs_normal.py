@@ -1,3 +1,4 @@
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import typing as t
 
@@ -509,52 +510,73 @@ def compare_all_other_study_samples_to_reference_sample(
 
     other_sample_ids = get_other_sample_ids(study_normal_coverage_files_dict.keys())
 
-    # Create a list of genemetircs files for each comparison sample
-    genemetrics_files = []
-
-    # Loop through each other sample and compare to the reference sample
-    for comparison_sample_id in other_sample_ids:
-        logger.info(
-            f"Comparing sample {comparison_sample_id} to reference sample {reference_sample_id} ..."
-        )
-
-        # Get the coverage files for the comparison sample
-        comparison_sample_coverage_files = study_normal_coverage_files_dict[
-            comparison_sample_id
-        ]
+    # Build tuples of arguments for each worker
+    worker_args = [
         (
-            comparison_sample_target_coverage_file,
-            comparison_sample_antitarget_coverage_file,
-        ) = validate_sample_coverage_files(
-            comparison_sample_id, comparison_sample_coverage_files
-        )
-
-        # Run cnvkit.py fix to adjust other sample's (anti)target coverage files to the reference sample's copy number reference
-        comparison_sample_ratio_file = run_cnvkit_fix(
-            comparison_sample_target_coverage_file,
-            comparison_sample_antitarget_coverage_file,
+            reference_sample_id,
             reference_sample_copy_number_reference_file,
             comparison_sample_id,
+            study_normal_coverage_files_dict[
+                comparison_sample_id
+            ],  # coverage files for comparison sample
+            sample_metadata_file,
             outdir,
         )
+        for comparison_sample_id in other_sample_ids
+    ]
 
-        # Get the sex of the comparison sample
-        comparison_sample_sex = get_sample_sex(
-            comparison_sample_id, sample_metadata_file
+    # Run comparisons in parallel and collect genemetrics files
+    with ProcessPoolExecutor() as executor:
+        genemetrics_files = list(
+            executor.map(_compare_sample_to_reference, worker_args)
         )
-
-        # Run CNVKit genemetrics to compare the comparison sample to the reference sample
-        comparison_id = f"{comparison_sample_id}_vs_{reference_sample_id}"
-        comparison_sample_genemetrics_file = run_cnvkit_genemetrics(
-            ratio_file=comparison_sample_ratio_file,
-            threshold=0.00001,  # Set low so all genes are reported in output
-            min_probes=3,  # Set low so all genes are reported in output
-            output_prefix=comparison_id,
-            outdir=outdir,
-            sex=comparison_sample_sex,
-        )
-
-        # Add the genemetircs file to the list
-        genemetrics_files.append(comparison_sample_genemetrics_file)
 
     return genemetrics_files
+
+
+def _compare_sample_to_reference(args: t.Tuple):
+    (
+        reference_sample_id,
+        reference_sample_copy_number_reference_file,
+        comparison_sample_id,
+        comparison_sample_coverage_files,
+        sample_metadata_file,
+        outdir,
+    ) = args
+
+    logger.info(
+        f"Comparing sample {comparison_sample_id} to reference sample {reference_sample_id} ..."
+    )
+
+    # Validate comparison sample coverage files
+    (
+        comparison_sample_target_coverage_file,
+        comparison_sample_antitarget_coverage_file,
+    ) = validate_sample_coverage_files(
+        comparison_sample_id, comparison_sample_coverage_files
+    )
+
+    # Run cnvkit.py fix to adjust other sample's (anti)target coverage files to the reference sample's copy number reference
+    comparison_sample_ratio_file = run_cnvkit_fix(
+        comparison_sample_target_coverage_file,
+        comparison_sample_antitarget_coverage_file,
+        reference_sample_copy_number_reference_file,
+        comparison_sample_id,
+        outdir,
+    )
+
+    # Get the sex of the comparison sample
+    comparison_sample_sex = get_sample_sex(comparison_sample_id, sample_metadata_file)
+
+    # Run CNVKit genemetrics to compare the comparison sample to the reference sample
+    comparison_id = f"{comparison_sample_id}_vs_{reference_sample_id}"
+    comparison_sample_genemetrics_file = run_cnvkit_genemetrics(
+        ratio_file=comparison_sample_ratio_file,
+        threshold=0.00001,
+        min_probes=3,
+        output_prefix=comparison_id,
+        outdir=outdir,
+        sex=comparison_sample_sex,
+    )
+
+    return comparison_sample_genemetrics_file
