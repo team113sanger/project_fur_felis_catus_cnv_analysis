@@ -306,32 +306,35 @@ def perform_normal_vs_normal_comparisons_for_study(
     # Value: list of genemetrics files for comparison samples when using the reference sample as the copy number reference
     reference_vs_comparison_genemetrics_files_dict = {}
 
-    # Loop through each sample and perform normal vs normal comparisons
+    # Ensure sample-specific output directories exist before running in parallel
+    reference_sample_outdirs = {}
     for reference_sample_id in sample_ids:
-        logger.info(
-            f"Performing normal vs normal comparisons using sample {reference_sample_id} as the reference sample..."
-        )
+        sample_outdir = outdir / reference_sample_id
+        sample_outdir.mkdir(parents=True, exist_ok=True)
+        reference_sample_outdirs[reference_sample_id] = sample_outdir
 
-        # Create sample-specific output directory
-        reference_sample_outdir = outdir / reference_sample_id
-        reference_sample_outdir.mkdir(parents=True, exist_ok=True)
+    # Perform normal vs normal comparisons for each sample in parallel
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_sample = {
+            executor.submit(
+                perform_normal_vs_normal_comparisons_for_sample,
+                reference_sample_id,
+                study_normal_coverage_files_dict,
+                reference_fasta,
+                sample_metadata_file,
+                reference_sample_outdirs[reference_sample_id],
+                max_workers,
+            ): reference_sample_id
+            for reference_sample_id in sample_ids
+        }
 
-        # Perform normal vs normal comparisons for the sample
-        comparison_sample_genemetrics_files = (
-            perform_normal_vs_normal_comparisons_for_sample(
-                reference_sample_id=reference_sample_id,
-                study_normal_coverage_files_dict=study_normal_coverage_files_dict,
-                reference_fasta=reference_fasta,
-                sample_metadata_file=sample_metadata_file,
-                outdir=reference_sample_outdir,
-                max_workers=max_workers,
-            )
-        )
+        for future in as_completed(future_to_sample):
+            reference_sample_id = future_to_sample[future]
 
-        # Add the genemetrics files to the dictionary
-        reference_vs_comparison_genemetrics_files_dict[
-            reference_sample_id
-        ] = comparison_sample_genemetrics_files
+            # Add the genemetrics files to the dictionary
+            reference_vs_comparison_genemetrics_files_dict[
+                reference_sample_id
+            ] = future.result()
 
     # Collate the log2 ratios for each gene for each comparison sample
     collated_log2_ratios_csv = outdir / "collated_log2_ratios.csv"
