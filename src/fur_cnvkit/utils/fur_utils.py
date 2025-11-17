@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import typing as t
@@ -8,6 +9,173 @@ import pandas as pd
 from fur_cnvkit.utils.logging_utils import get_package_logger
 
 logger = get_package_logger()
+
+
+# -----------------------------------------------
+# Metadata configuration handling
+# -----------------------------------------------
+@dataclass(frozen=True)
+class MetadataColumns:
+    """Container for the column names used in sample metadata files."""
+
+    sample_id: str = "Sanger DNA ID"
+    tumour_normal: str = "T/N"
+    sex: str = "Sex"
+    study: t.Optional[str] = None
+
+
+DEFAULT_METADATA_COLUMNS = MetadataColumns()
+_metadata_columns: MetadataColumns = DEFAULT_METADATA_COLUMNS
+_metadata_cache: t.Dict[t.Tuple[Path, MetadataColumns], t.Dict[str, pd.DataFrame]] = {}
+
+
+def _normalise_metadata_config(
+    config: t.Optional[t.Union[MetadataColumns, t.Dict[str, t.Optional[str]]]]
+) -> MetadataColumns:
+    """Normalise user supplied metadata column configuration."""
+    if config is None:
+        return DEFAULT_METADATA_COLUMNS
+    if isinstance(config, MetadataColumns):
+        return config
+
+    if not isinstance(config, dict):
+        raise TypeError(
+            "Metadata column configuration must be a MetadataColumns instance, a dict, or None."
+        )
+
+    allowed_keys = {"sample_id", "tumour_normal", "sex", "study"}
+    invalid_keys = set(config.keys()) - allowed_keys
+    if invalid_keys:
+        invalid = ", ".join(sorted(invalid_keys))
+        raise KeyError(
+            f"Unknown metadata column keys provided: {invalid}. "
+            f"Supported keys are: {', '.join(sorted(allowed_keys))}."
+        )
+
+    return MetadataColumns(
+        sample_id=config.get("sample_id", DEFAULT_METADATA_COLUMNS.sample_id),
+        tumour_normal=config.get(
+            "tumour_normal", DEFAULT_METADATA_COLUMNS.tumour_normal
+        ),
+        sex=config.get("sex", DEFAULT_METADATA_COLUMNS.sex),
+        study=config.get("study", DEFAULT_METADATA_COLUMNS.study),
+    )
+
+
+def set_metadata_columns(
+    config: t.Optional[t.Union[MetadataColumns, t.Dict[str, t.Optional[str]]]]
+) -> MetadataColumns:
+    """
+    Configure the column names used when parsing sample metadata.
+
+    Args:
+        config: Either a MetadataColumns instance, a dictionary containing any of
+            the keys 'sample_id', 'tumour_normal', 'sex', 'study', or None to reset
+            to the defaults.
+
+    Returns:
+        The effective MetadataColumns configuration.
+    """
+    global _metadata_columns
+    _metadata_columns = _normalise_metadata_config(config)
+    _metadata_cache.clear()
+    return _metadata_columns
+
+
+def get_metadata_columns() -> MetadataColumns:
+    """Return the current metadata column configuration."""
+    return _metadata_columns
+
+
+# -----------------------------------------------
+# Metadata loading helpers
+# -----------------------------------------------
+
+
+def _ensure_required_columns(
+    df: pd.DataFrame,
+    required_columns: t.Iterable[str],
+    metadata_path: Path,
+    context: str,
+) -> None:
+    """Verify that the required columns exist in the provided DataFrame."""
+    missing = [col for col in required_columns if col not in df.columns]
+    if missing:
+        missing_cols = ", ".join(missing)
+        raise ValueError(
+            f"Required column(s) {missing_cols} are missing from metadata source "
+            f"'{metadata_path}' (context: {context})."
+        )
+
+
+def _read_tabular_file(metadata_path: Path) -> pd.DataFrame:
+    """Load a tabular (TSV/CSV) metadata file."""
+    suffix = metadata_path.suffix.lower()
+    if suffix in (".tsv", ".txt"):
+        return pd.read_csv(metadata_path, sep="\t")
+    if suffix == ".csv":
+        return pd.read_csv(metadata_path)
+
+    raise ValueError(
+        f"Unsupported metadata file extension '{suffix}' for '{metadata_path}'. "
+        "Supported formats: .xlsx, .xls, .tsv, .txt, .csv."
+    )
+
+
+def _group_dataframe_by_study(
+    df: pd.DataFrame, metadata_path: Path
+) -> t.Dict[str, pd.DataFrame]:
+    """Split a DataFrame by the configured study column."""
+    columns = get_metadata_columns()
+    if columns.study is None:
+        return {"default": df.copy()}
+
+    study_column = columns.study
+    _ensure_required_columns(df, [study_column], metadata_path, "group by study")
+    grouped: t.Dict[str, pd.DataFrame] = {}
+    for study_id, group_df in df.groupby(study_column):
+        grouped[str(study_id)] = group_df.copy()
+    return grouped
+
+
+def _load_metadata_tables(metadata_path: Path) -> t.Dict[str, pd.DataFrame]:
+    """Load a metadata file into a dictionary of DataFrames keyed by study."""
+    columns = get_metadata_columns()
+    resolved_path = metadata_path.resolve()
+
+    if not resolved_path.exists():
+        raise FileNotFoundError(
+            f"Metadata file '{resolved_path}' does not exist. Please check the path."
+        )
+
+    suffix = resolved_path.suffix.lower()
+    if suffix in (".xlsx", ".xls"):
+        spreadsheet = pd.ExcelFile(resolved_path)
+        sheet_tables = {
+            sheet_name: spreadsheet.parse(sheet_name).copy()
+            for sheet_name in spreadsheet.sheet_names
+        }
+        if columns.study is not None:
+            combined_df = pd.concat(sheet_tables.values(), ignore_index=True)
+            return _group_dataframe_by_study(combined_df, resolved_path)
+        return sheet_tables
+
+    tabular_df = _read_tabular_file(resolved_path)
+    return _group_dataframe_by_study(tabular_df, resolved_path)
+
+
+def _get_metadata_tables(metadata_path: Path) -> t.Dict[str, pd.DataFrame]:
+    """
+    Return cached metadata tables keyed by study.
+
+    Returns copies of the cached DataFrames to avoid accidental mutation.
+    """
+    cache_key = (metadata_path.resolve(), get_metadata_columns())
+    if cache_key not in _metadata_cache:
+        _metadata_cache[cache_key] = _load_metadata_tables(metadata_path)
+
+    return {study: df.copy() for study, df in _metadata_cache[cache_key].items()}
+
 
 # -----------------------------------------------
 # Functions for handling sample IDs
@@ -148,6 +316,14 @@ def extract_metadata_files_from_parameter_json(
     exclude_keys = {"unplaced_contig_prefixes"}
 
     metadata = load_metadata(parameter_json)
+    if "sample_metadata_xlsx" not in metadata:
+        if "sample_metadata_file" in metadata:
+            metadata["sample_metadata_xlsx"] = metadata["sample_metadata_file"]
+        else:
+            raise KeyError(
+                f"Parameter file '{parameter_json}' must contain either "
+                "'sample_metadata_xlsx' or 'sample_metadata_file'."
+            )
     validate_metadata_keys(metadata, expected_keys, parameter_json)
     return convert_paths(metadata, exclude_keys)
 
@@ -230,57 +406,55 @@ def expand_sex_abbreviation(sex: str) -> str:
         raise ValueError(f"Unrecognised value for sex: {sex}. Expected M, F or U.")
 
 
-def get_sample_sex(sample_id: str, sample_metadata_xlsx: Path) -> str:
+def get_sample_sex(sample_id: str, sample_metadata_file: Path) -> str:
     """
-    Extract the sex for a given sample ID from the metadata Excel file.
+    Extract the sex for a given sample ID from the metadata file.
 
     Args:
         sample_id (str): The sample ID for which to retrieve the sex.
-        sample_metadata_xlsx (Path): Path to the metadata Excel file.
+        sample_metadata_file (Path): Path to the metadata file.
 
     Returns:
-        str: The sex of the given sample ID (expanded format: "Male", "Female", or "Unknown").
+        str: The sex of the given sample ID (expanded format: "male", "female", or "unknown").
 
     Raises:
         ValueError: If the sample ID is not found or if the sex value is unexpected.
     """
-    # Load the sample metadata spreadsheet
-    sample_metadata_spreadsheet = pd.ExcelFile(sample_metadata_xlsx)
+    columns = get_metadata_columns()
+    tables = _get_metadata_tables(sample_metadata_file)
 
-    # Iterate through each sheet (study) in the metadata spreadsheet
-    for sheet_name in sample_metadata_spreadsheet.sheet_names:
-        sheet_data = pd.read_excel(sample_metadata_spreadsheet, sheet_name=sheet_name)
-
-        # Check if the sample ID exists in the current sheet
-        sample_row = sheet_data[sheet_data["Sanger DNA ID"] == sample_id]
+    for context, table in tables.items():
+        _ensure_required_columns(
+            table,
+            (columns.sample_id, columns.sex),
+            sample_metadata_file,
+            context,
+        )
+        sample_row = table[table[columns.sample_id] == sample_id]
         if not sample_row.empty:
-            # Extract the sex value
-            sex = sample_row.iloc[0]["Sex"]
-            if sex not in {"M", "F", "U"}:
+            sex_value = sample_row.iloc[0][columns.sex]
+            if sex_value not in {"M", "F", "U"}:
                 logger.error(
-                    f"Unexpected sex value '{sex}' for sample '{sample_id}' in sheet '{sheet_name}'."
+                    f"Unexpected sex value '{sex_value}' for sample '{sample_id}' in '{sample_metadata_file}' (context: {context})."
                 )
                 raise ValueError(
-                    f"Unexpected sex value '{sex}' for sample '{sample_id}'. Expected one of 'M', 'F', or 'U'."
+                    f"Unexpected sex value '{sex_value}' for sample '{sample_id}'. Expected one of 'M', 'F', or 'U'."
                 )
+            return expand_sex_abbreviation(sex_value)
 
-            # Expand the sex abbreviation and return it
-            return expand_sex_abbreviation(sex)
-
-    # If the sample ID was not found in any sheet, raise an error
     logger.error(
-        f"Sample ID '{sample_id}' is missing from the metadata Excel '{sample_metadata_xlsx}'."
+        f"Sample ID '{sample_id}' is missing from the metadata file '{sample_metadata_file}'."
     )
     raise ValueError(
-        f"Sample ID '{sample_id}' is missing from the metadata Excel '{sample_metadata_xlsx}'."
+        f"Sample ID '{sample_id}' is missing from the metadata file '{sample_metadata_file}'."
     )
 
 
 def determine_sample_sexes(
-    file_list: t.List[Path], sample_metadata_xlsx: Path
+    file_list: t.List[Path], sample_metadata_file: Path
 ) -> t.Dict[str, str]:
     """
-    Determine the sex of each sample in the file list based on the metadata Excel file.
+    Determine the sex of each sample in the file list based on the metadata file.
     """
     # Get the corresponding sample IDs for each file in the file list
     sample_ids = get_sample_ids_for_file_list(file_list)
@@ -291,7 +465,7 @@ def determine_sample_sexes(
     # Use the helper function to extract the sex for each sample ID
     for sample_id in sample_ids:
         try:
-            sample_sex_dict[sample_id] = get_sample_sex(sample_id, sample_metadata_xlsx)
+            sample_sex_dict[sample_id] = get_sample_sex(sample_id, sample_metadata_file)
         except ValueError as e:
             logger.error(str(e))
             raise
@@ -301,26 +475,26 @@ def determine_sample_sexes(
     if missing_samples:
         missing_samples_str = ", ".join(sorted(missing_samples))
         logger.error(
-            f"The following samples are missing from the metadata Excel '{sample_metadata_xlsx}': {missing_samples_str}."
+            f"The following samples are missing from the metadata file '{sample_metadata_file}': {missing_samples_str}."
         )
         raise ValueError(
-            f"The following samples are missing from the metadata Excel '{sample_metadata_xlsx}': {missing_samples_str}."
+            f"The following samples are missing from the metadata file '{sample_metadata_file}': {missing_samples_str}."
         )
 
     return sample_sex_dict
 
 
 def split_file_list_by_sample_sex(
-    file_list: t.List[Path], sample_metadata_xlsx: Path
+    file_list: t.List[Path], sample_metadata_file: Path
 ) -> t.DefaultDict[str, t.List[Path]]:
     """
     Splits a list of file paths by the sex of the samples they correspond to.
-    This function takes a list of file paths and a metadata Excel file that contains
+    This function takes a list of file paths and a metadata file that contains
     information about the sex of each sample. It determines the sex of each sample
     and groups the file paths by sex.
     Args:
         file_list (t.List[Path]): A list of file paths to be split by sample sex.
-        sample_metadata_xlsx (Path): Path to the Excel file containing sample metadata,
+        sample_metadata_file (Path): Path to the file containing sample metadata,
                                      including the sex of each sample.
     Returns:
         t.DefaultDict[str, t.List[Path]]: A dictionary where the keys are the sexes
@@ -329,7 +503,7 @@ def split_file_list_by_sample_sex(
                                           of that sex.
     """
     # Determine the sexes of all samples in the file list
-    sample_sex_dict = determine_sample_sexes(file_list, sample_metadata_xlsx)
+    sample_sex_dict = determine_sample_sexes(file_list, sample_metadata_file)
 
     # Initialise a dictionary to store sex-separated files
     file_sex_dict = defaultdict(list)
@@ -348,14 +522,14 @@ def split_file_list_by_sample_sex(
 
 
 def map_sample_ids_to_study_ids(
-    sample_ids: set, sample_metadata_xlsx: Path
+    sample_ids: set, sample_metadata_file: Path
 ) -> t.Dict[str, str]:
     """
-    Map sample IDs to their corresponding study IDs based on the metadata Excel file.
+    Map sample IDs to their corresponding study IDs based on the metadata file.
 
     Args:
         sample_ids (set): A set of sample IDs to map to study IDs.
-        sample_metadata_xlsx (Path): Path to the metadata Excel file.
+        sample_metadata_file (Path): Path to the metadata file.
 
     Returns:
         Dict[str, str]: A dictionary mapping each sample ID to its corresponding study ID.
@@ -367,88 +541,80 @@ def map_sample_ids_to_study_ids(
     sample_study_dict = defaultdict(list)
 
     for sample_id in sample_ids:
-        study_id = get_sample_study(sample_metadata_xlsx, sample_id)
+        study_id = get_sample_study(sample_metadata_file, sample_id)
         sample_study_dict[study_id].append(sample_id)
 
     return sample_study_dict
 
 
-def get_sample_study(sample_metadata_xlsx: Path, sample_id: str) -> str:
-    """Get the study ID for the given sample from the sample metadata Excel spreadsheet"""
+def get_sample_study(sample_metadata_file: Path, sample_id: str) -> str:
+    """Get the study ID for the given sample from the metadata file."""
+    columns = get_metadata_columns()
+    tables = _get_metadata_tables(sample_metadata_file)
 
-    # Load the Excel file
-    excel_data = pd.ExcelFile(sample_metadata_xlsx)
+    for context, table in tables.items():
+        _ensure_required_columns(
+            table,
+            (columns.sample_id,),
+            sample_metadata_file,
+            context,
+        )
+        matched_row = table[table[columns.sample_id] == sample_id]
 
-    # Iterate through each sheet in the file
-    for sheet_name in excel_data.sheet_names:
-        # Load the sheet into a DataFrame
-        df = excel_data.parse(sheet_name)
-
-        # Search for the sample ID
-        matched_row = df[df["Sanger DNA ID"] == sample_id]
-
-        # If a match is found, return the study ID
         if not matched_row.empty:
-            return sheet_name
+            if columns.study and columns.study in matched_row.columns:
+                study_value = matched_row.iloc[0][columns.study]
+                return str(study_value)
+            return context
 
-    # Raise an error if the sample ID is not found
-    raise ValueError(f"Sample ID '{sample_id}' not found in any sheet.")
+    raise ValueError(f"Sample ID '{sample_id}' not found in metadata.")
 
 
 # -----------------------------------------------
 # Functions for determining tumour/normal status of a given sample
 # -----------------------------------------------
-def get_tumour_normal_status(sample_metadata_xlsx: Path, sample_id: str):
+def get_tumour_normal_status(sample_metadata_file: Path, sample_id: str):
     """
-    This function takes an Excel file path and a sample ID, searches all sheets
-    for the sample ID, and returns the tumour/normal status (T/N) of the sample.
-    Raises a ValueError if the sample ID is not found, if required columns are missing,
-    or if the T/N status is invalid.
+    This function takes a metadata file path and a sample ID, searches all studies
+    for the sample ID, and returns the tumour/normal status of the sample. Raises a
+    ValueError if the sample ID is not found, if required columns are missing,
+    or if the tumour/normal status is invalid.
 
     Parameters:
-        sample_metadata_xlsx (Path): Path to the Excel file.
+        sample_metadata_file (Path): Path to the metadata file.
         sample_id (str): The sample ID to search for.
 
     Returns:
         str: Tumour/normal status ('T' or 'N') if found.
 
     Raises:
-        ValueError: If the sample ID is not found in any sheet.
-        ValueError: If required columns ('Sanger DNA ID', 'T/N') are missing in any sheet.
+        ValueError: If the sample ID is not found in any context.
+        ValueError: If required columns are missing in any context.
         ValueError: If the T/N status for the sample ID is invalid, i.e., does not start
                     with 'T' or 'N'.
     """
-    # Load the Excel file
-    excel_data = pd.ExcelFile(sample_metadata_xlsx)
+    columns = get_metadata_columns()
+    tables = _get_metadata_tables(sample_metadata_file)
 
-    # Iterate through each sheet in the file
-    for sheet_name in excel_data.sheet_names:
-        # Load the sheet into a DataFrame
-        df = excel_data.parse(sheet_name)
+    for context, table in tables.items():
+        _ensure_required_columns(
+            table,
+            (columns.sample_id, columns.tumour_normal),
+            sample_metadata_file,
+            context,
+        )
 
-        # Check if the required columns exist
-        if not {"Sanger DNA ID", "T/N"}.issubset(df.columns):
+        matched_row = table[table[columns.sample_id] == sample_id]
+
+        if not matched_row.empty:
+            tn_status = matched_row.iloc[0][columns.tumour_normal]
+            if isinstance(tn_status, str) and tn_status.startswith(("T", "N")):
+                return tn_status[0]
             raise ValueError(
-                f"Required columns ('Sanger DNA ID', 'T/N') are missing in sheet '{sheet_name}'."
+                f"Invalid {columns.tumour_normal} status '{tn_status}' for sample ID '{sample_id}'."
             )
 
-        # Search for the sample ID
-        matched_row = df[df["Sanger DNA ID"] == sample_id]
-
-        # If a match is found, return the T/N status
-        if not matched_row.empty:
-            tn_status = matched_row["T/N"].iloc[0]
-            if isinstance(tn_status, str) and tn_status.startswith(("T", "N")):
-                return tn_status[
-                    0
-                ]  # Only return the first character (T or N) e.g. for samples with T1, N2 etc.
-            else:
-                raise ValueError(
-                    f"Invalid T/N status '{tn_status}' for sample ID '{sample_id}'."
-                )
-
-    # Raise an error if the sample ID is not found
-    raise ValueError(f"Sample ID '{sample_id}' not found in any sheet.")
+    raise ValueError(f"Sample ID '{sample_id}' not found in metadata.")
 
 
 # -----------------------------------------------
@@ -457,7 +623,7 @@ def get_tumour_normal_status(sample_metadata_xlsx: Path, sample_id: str):
 
 
 def categorise_files_by_tumour_normal_status(
-    files: t.List[Path], sample_metadata_xlsx: Path
+    files: t.List[Path], sample_metadata_file: Path
 ) -> t.DefaultDict[str, t.List[Path]]:
     logger.info("Categorising files based on their tumour/normal status ...")
 
@@ -466,7 +632,7 @@ def categorise_files_by_tumour_normal_status(
 
     for file in files:
         sample_id = get_sample_id_from_file_path(file)
-        tn_status = get_tumour_normal_status(sample_metadata_xlsx, sample_id)
+        tn_status = get_tumour_normal_status(sample_metadata_file, sample_id)
 
         if tn_status == "T":
             tn_status_file_dict["T"].append(file)

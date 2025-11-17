@@ -3,7 +3,6 @@ from pathlib import Path
 import json
 import pandas as pd
 from collections import defaultdict
-import re
 from tempfile import TemporaryDirectory
 
 from tests.mocks.mock_files import get_example_sample_metadata_xlsx
@@ -22,6 +21,8 @@ from fur_cnvkit.utils.fur_utils import (
     get_tumour_normal_status,
     categorise_files_by_tumour_normal_status,
     get_sample_study,
+    set_metadata_columns,
+    DEFAULT_METADATA_COLUMNS,
 )
 
 
@@ -32,6 +33,14 @@ from fur_cnvkit.utils.fur_utils import (
 def example_sample_metadata_xlsx():
     sample_metadata_xlsx = get_example_sample_metadata_xlsx()
     return sample_metadata_xlsx
+
+
+@pytest.fixture(autouse=True)
+def reset_metadata_configuration():
+    """Ensure metadata column configuration is reset before and after each test."""
+    set_metadata_columns(None)
+    yield
+    set_metadata_columns(None)
 
 
 # Tests
@@ -294,6 +303,30 @@ def test_map_sample_ids_to_study_ids_success():
             assert sorted(result[study]) == sorted(expected[study])
 
 
+def test_map_sample_ids_to_study_ids_with_study_column(tmp_path):
+    metadata_df = pd.DataFrame(
+        {
+            "Sanger_DNA_ID": ["S1", "S2", "S3"],
+            "Study": ["StudyA", "StudyB", "StudyA"],
+        }
+    )
+    metadata_file = tmp_path / "metadata.tsv"
+    metadata_df.to_csv(metadata_file, sep="\t", index=False)
+
+    set_metadata_columns(
+        {
+            "sample_id": "Sanger_DNA_ID",
+            "tumour_normal": DEFAULT_METADATA_COLUMNS.tumour_normal,
+            "sex": DEFAULT_METADATA_COLUMNS.sex,
+            "study": "Study",
+        }
+    )
+
+    result = map_sample_ids_to_study_ids({"S1", "S2", "S3"}, metadata_file)
+    expected = {"StudyA": {"S1", "S3"}, "StudyB": {"S2"}}
+    assert {study: set(samples) for study, samples in result.items()} == expected
+
+
 def test_map_sample_ids_to_study_ids_missing_sample():
     """
     Test map_sample_ids_to_study_ids with a sample ID that does not appear
@@ -308,7 +341,7 @@ def test_map_sample_ids_to_study_ids_missing_sample():
         # "S2" won't be found
         sample_ids = {"S1", "S2"}
 
-        with pytest.raises(ValueError, match="Sample ID 'S2' not found in any sheet."):
+        with pytest.raises(ValueError, match="Sample ID 'S2' not found in metadata."):
             map_sample_ids_to_study_ids(sample_ids, metadata_file)
 
 
@@ -447,12 +480,12 @@ def test_determine_sample_sexes_missing_samples(tmp_path, caplog):
 
     with pytest.raises(
         ValueError,
-        match=f"Sample ID 'sample4' is missing from the metadata Excel '{excel_file}'.",
+        match=f"Sample ID 'sample4' is missing from the metadata file '{excel_file}'.",
     ) as excinfo:
         determine_sample_sexes(files, excel_file)
 
     expected_error_message = (
-        f"Sample ID 'sample4' is missing from the metadata Excel '{excel_file}'."
+        f"Sample ID 'sample4' is missing from the metadata file '{excel_file}'."
     )
     assert expected_error_message in str(excinfo.value)
     assert expected_error_message in caplog.text
@@ -512,12 +545,12 @@ def test_split_file_list_by_sample_sex_with_missing_sex(tmp_path, caplog):
 
     with pytest.raises(
         ValueError,
-        match=f"Sample ID 'sample3' is missing from the metadata Excel '{excel_file}'.",
+        match=f"Sample ID 'sample3' is missing from the metadata file '{excel_file}'.",
     ) as excinfo:
         split_file_list_by_sample_sex(files, excel_file)
 
     expected_error_message = (
-        f"Sample ID 'sample3' is missing from the metadata Excel '{excel_file}'."
+        f"Sample ID 'sample3' is missing from the metadata file '{excel_file}'."
     )
     assert expected_error_message in str(excinfo.value)
     assert expected_error_message in caplog.text
@@ -535,7 +568,7 @@ def test_get_tumour_normal_status_invalid_sample_id(example_sample_metadata_xlsx
     # Test with an invalid sample ID
     sample_id = "INVALID_SAMPLE_ID"
     with pytest.raises(
-        ValueError, match=f"Sample ID '{sample_id}' not found in any sheet."
+        ValueError, match=f"Sample ID '{sample_id}' not found in metadata."
     ):
         get_tumour_normal_status(example_sample_metadata_xlsx, sample_id)
 
@@ -548,11 +581,9 @@ def test_get_tumour_normal_status_missing_columns():
     temp_file = Path("/tmp/missing_columns.xlsx")
     df.to_excel(temp_file, index=False, sheet_name="Sheet1")
 
-    with pytest.raises(
-        ValueError,
-        match=r"^Required columns \('Sanger DNA ID', 'T/N'\) are missing in sheet",
-    ):
+    with pytest.raises(ValueError) as excinfo:
         get_tumour_normal_status(temp_file, "ANY_ID")
+    assert "Required column(s) Sanger DNA ID, T/N are missing" in str(excinfo.value)
 
     # Clean up the temporary file
     temp_file.unlink()
@@ -581,6 +612,32 @@ def test_get_tumour_normal_status_multiple_patient_samples():
     finally:
         # Cleanup
         temp_file.unlink()
+
+
+def test_get_tumour_normal_status_with_custom_columns(tmp_path):
+    df = pd.DataFrame(
+        {
+            "Sanger_DNA_ID": ["Sample1", "Sample2"],
+            "Phenotype": ["Tumour", "Normal"],
+            "Sex_Column": ["M", "F"],
+        }
+    )
+    tsv_file = tmp_path / "metadata.tsv"
+    df.to_csv(tsv_file, sep="\t", index=False)
+
+    set_metadata_columns(
+        {
+            "sample_id": "Sanger_DNA_ID",
+            "tumour_normal": "Phenotype",
+            "sex": "Sex_Column",
+        }
+    )
+
+    assert get_tumour_normal_status(tsv_file, "Sample1") == "T"
+    assert get_tumour_normal_status(tsv_file, "Sample2") == "N"
+    assert determine_sample_sexes(
+        [Path("Sample1.bam"), Path("Sample2.bam")], tsv_file
+    ) == {"Sample1": "male", "Sample2": "female"}
 
 
 def test_get_tumour_normal_status_invalid_status():
@@ -679,5 +736,5 @@ def test_get_sample_study():
         assert get_sample_study(temp_file, "S3") == "Study2"
 
         # Test case for a missing sample ID
-        with pytest.raises(ValueError, match="Sample ID 'S5' not found in any sheet."):
+        with pytest.raises(ValueError, match="Sample ID 'S5' not found in metadata."):
             get_sample_study(temp_file, "S5")

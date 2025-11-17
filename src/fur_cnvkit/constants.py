@@ -19,6 +19,7 @@ COMMAND_NAME__CALCULATE_MAD: str = "mad"
 COMMAND_NAME__GENERATE_STATIC_FILES: str = "cnvkit_static_files"
 COMMAND_NAME__GENERATE_CN_REFERENCE: str = "copy_number_reference"
 COMMAND_NAME__GENERATE_ONCOPRINT: str = "oncoprint"
+COMMAND_NAME__GENERATE_GENEMETRICS_STUDY_SUMMARY: str = "genemetrics_study_summary"
 COMMAND_NAME__RUN_CNVKIT_CN_CALLING_PIPELINE: str = "cnvkit_cn_calling_pipeline"
 
 # Program & Command descriptions
@@ -34,6 +35,9 @@ DESCRIPTION__GENERATE_CN_REFERENCE: str = (
     "Generate a copy number reference file for a given cohort of samples."
 )
 DESCRIPTION__GENERATE_ONCOPRINT: str = "Generate an oncoprint figure showing recurrent somatic mutations and CNVs across samples."
+DESCRIPTION__GENERATE_GENEMETRICS_STUDY_SUMMARY: str = (
+    "Generate a study-level matrix summarizing CNVkit gene metrics for a cohort."
+)
 DESCRIPTION__RUN_CNVKIT_CN_CALLING_PIPELINE: str = (
     "Run the end-to-end copy number calling workflow for a cohort of samples."
 )
@@ -47,6 +51,9 @@ SHORT_HELP__CALCULATE_MAD: str = (
 SHORT_HELP__GENERATE_STATIC_FILES: str = "Generate CNVKit static files."
 SHORT_HELP__GENERATE_CN_REFERENCE: str = "Generate a copy number reference file."
 SHORT_HELP__GENERATE_ONCOPRINT: str = "Generate an oncoprint figure."
+SHORT_HELP__GENERATE_GENEMETRICS_STUDY_SUMMARY: str = (
+    "Create a genemetrics study summary CSV."
+)
 SHORT_HELP__RUN_CNVKIT_CN_CALLING_PIPELINE: str = (
     "Run the end-to-end copy number calling workflow for a cohort of samples."
 )

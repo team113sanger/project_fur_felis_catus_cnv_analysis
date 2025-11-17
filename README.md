@@ -51,7 +51,7 @@ Given
 - A bedfile describing the targeted regions in a pulldown study
 - A reference genome fasta file
 - A flat file containing gene coordinates (e.g. Ensembl GTF or GFF3)
-- A sample metadata `.xlsx` file containing sample IDs (`Sanger DNA ID`), tumor normal status (`T/N`) and Sex (`Sex`) for each sample.
+- A sample metadata table (Excel/TSV/CSV) containing sample IDs (`Sanger DNA ID` by default), tumour/normal status (`T/N`) and Sex (`Sex`). Column names can be customised via the CNVKit static file CLI or by setting the `metadata_columns` entry in the generated parameter file if your manifests use different headers (for example `Sanger_DNA_ID` or `Phenotype`).
 
 
 This tool:

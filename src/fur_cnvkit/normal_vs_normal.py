@@ -1,3 +1,4 @@
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import typing as t
 
@@ -30,8 +31,9 @@ logger = get_package_logger()
 def perform_normal_vs_normal_comparisons(
     normal_coverage_files: t.List[Path],
     reference_fasta: Path,
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     logger.info("Performing normal vs normal comparisons ...")
     logger.debug(f"Normal coverage files: {normal_coverage_files}")
@@ -45,7 +47,7 @@ def perform_normal_vs_normal_comparisons(
     # Map normal sample IDs to their corresponding study ID
     logger.info("Mapping normal sample IDs to study IDs ...")
     sample_study_dict = map_sample_ids_to_study_ids(
-        sample_ids=normal_sample_ids, sample_metadata_xlsx=sample_metadata_xlsx
+        sample_ids=normal_sample_ids, sample_metadata_file=sample_metadata_file
     )
 
     logger.debug(f"Sample study dictionary: {sample_study_dict}")
@@ -85,8 +87,9 @@ def perform_normal_vs_normal_comparisons(
             sample_ids=sample_ids,
             study_normal_coverage_files_dict=study_normal_coverage_files_dict,
             reference_fasta=reference_fasta,
-            sample_metadata_xlsx=sample_metadata_xlsx,
+            sample_metadata_file=sample_metadata_file,
             outdir=study_outdir,
+            max_workers=max_workers,
         )
 
         # Add the collated log2 ratios CSV file to the dictionary
@@ -294,39 +297,44 @@ def perform_normal_vs_normal_comparisons_for_study(
     sample_ids: t.List[str],
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
     reference_fasta: Path,
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     # Create a dictionary of genemetrics files for each reference sample
     # Key: reference sample ID
     # Value: list of genemetrics files for comparison samples when using the reference sample as the copy number reference
     reference_vs_comparison_genemetrics_files_dict = {}
 
-    # Loop through each sample and perform normal vs normal comparisons
+    # Ensure sample-specific output directories exist before running in parallel
+    reference_sample_outdirs = {}
     for reference_sample_id in sample_ids:
-        logger.info(
-            f"Performing normal vs normal comparisons using sample {reference_sample_id} as the reference sample..."
-        )
+        sample_outdir = outdir / reference_sample_id
+        sample_outdir.mkdir(parents=True, exist_ok=True)
+        reference_sample_outdirs[reference_sample_id] = sample_outdir
 
-        # Create sample-specific output directory
-        reference_sample_outdir = outdir / reference_sample_id
-        reference_sample_outdir.mkdir(parents=True, exist_ok=True)
+    # Perform normal vs normal comparisons for each sample in parallel
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_sample = {
+            executor.submit(
+                perform_normal_vs_normal_comparisons_for_sample,
+                reference_sample_id,
+                study_normal_coverage_files_dict,
+                reference_fasta,
+                sample_metadata_file,
+                reference_sample_outdirs[reference_sample_id],
+                max_workers,
+            ): reference_sample_id
+            for reference_sample_id in sample_ids
+        }
 
-        # Perform normal vs normal comparisons for the sample
-        comparison_sample_genemetrics_files = (
-            perform_normal_vs_normal_comparisons_for_sample(
-                reference_sample_id=reference_sample_id,
-                study_normal_coverage_files_dict=study_normal_coverage_files_dict,
-                reference_fasta=reference_fasta,
-                sample_metadata_xlsx=sample_metadata_xlsx,
-                outdir=reference_sample_outdir,
-            )
-        )
+        for future in as_completed(future_to_sample):
+            reference_sample_id = future_to_sample[future]
 
-        # Add the genemetrics files to the dictionary
-        reference_vs_comparison_genemetrics_files_dict[
-            reference_sample_id
-        ] = comparison_sample_genemetrics_files
+            # Add the genemetrics files to the dictionary
+            reference_vs_comparison_genemetrics_files_dict[
+                reference_sample_id
+            ] = future.result()
 
     # Collate the log2 ratios for each gene for each comparison sample
     collated_log2_ratios_csv = outdir / "collated_log2_ratios.csv"
@@ -440,8 +448,9 @@ def perform_normal_vs_normal_comparisons_for_sample(
     reference_sample_id: str,
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
     reference_fasta: Path,
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     logger.info(
         f"Performing normal vs normal comparisons for sample {reference_sample_id} ..."
@@ -451,9 +460,7 @@ def perform_normal_vs_normal_comparisons_for_sample(
 
     # 1. Get the sex of the reference sample
     logger.info("Getting the sex for the reference sample ...")
-    reference_sample_sex = get_sample_sex(
-        reference_sample_id, sample_metadata_xlsx=sample_metadata_xlsx
-    )
+    reference_sample_sex = get_sample_sex(reference_sample_id, sample_metadata_file)
 
     logger.debug(f"Sex for {reference_sample_id}: {reference_sample_sex}")
 
@@ -490,8 +497,9 @@ def perform_normal_vs_normal_comparisons_for_sample(
         reference_sample_id=reference_sample_id,
         reference_sample_copy_number_reference_file=reference_sample_copy_number_reference_file,
         study_normal_coverage_files_dict=study_normal_coverage_files_dict,
-        sample_metadata_xlsx=sample_metadata_xlsx,
+        sample_metadata_file=sample_metadata_file,
         outdir=outdir,
+        max_workers=max_workers,
     )
 
     # 5. Return the genemetrics files for the comparison samples
@@ -502,8 +510,9 @@ def compare_all_other_study_samples_to_reference_sample(
     reference_sample_id: str,
     reference_sample_copy_number_reference_file: Path,
     study_normal_coverage_files_dict: t.Dict[str, t.List[Path]],
-    sample_metadata_xlsx: Path,
+    sample_metadata_file: Path,
     outdir: Path,
+    max_workers: t.Optional[int] = None,
 ):
     # Get a set of every other normal sample ID in the study to compare to the reference sample
     def get_other_sample_ids(sample_ids):
@@ -511,52 +520,67 @@ def compare_all_other_study_samples_to_reference_sample(
 
     other_sample_ids = get_other_sample_ids(study_normal_coverage_files_dict.keys())
 
-    # Create a list of genemetircs files for each comparison sample
-    genemetrics_files = []
-
-    # Loop through each other sample and compare to the reference sample
-    for comparison_sample_id in other_sample_ids:
-        logger.info(
-            f"Comparing sample {comparison_sample_id} to reference sample {reference_sample_id} ..."
-        )
-
-        # Get the coverage files for the comparison sample
-        comparison_sample_coverage_files = study_normal_coverage_files_dict[
-            comparison_sample_id
+    # Compare each other sample to the reference sample in parallel and collect the genemetrics files
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(
+                _compare_sample_to_reference,
+                reference_sample_id,
+                reference_sample_copy_number_reference_file,
+                comparison_sample_id,
+                study_normal_coverage_files_dict[comparison_sample_id],
+                sample_metadata_file,
+                outdir,
+            )
+            for comparison_sample_id in other_sample_ids
         ]
-        (
-            comparison_sample_target_coverage_file,
-            comparison_sample_antitarget_coverage_file,
-        ) = validate_sample_coverage_files(
-            comparison_sample_id, comparison_sample_coverage_files
-        )
-
-        # Run cnvkit.py fix to adjust other sample's (anti)target coverage files to the reference sample's copy number reference
-        comparison_sample_ratio_file = run_cnvkit_fix(
-            comparison_sample_target_coverage_file,
-            comparison_sample_antitarget_coverage_file,
-            reference_sample_copy_number_reference_file,
-            comparison_sample_id,
-            outdir,
-        )
-
-        # Get the sex of the comparison sample
-        comparison_sample_sex = get_sample_sex(
-            comparison_sample_id, sample_metadata_xlsx=sample_metadata_xlsx
-        )
-
-        # Run CNVKit genemetrics to compare the comparison sample to the reference sample
-        comparison_id = f"{comparison_sample_id}_vs_{reference_sample_id}"
-        comparison_sample_genemetrics_file = run_cnvkit_genemetrics(
-            ratio_file=comparison_sample_ratio_file,
-            threshold=0.00001,  # Set low so all genes are reported in output
-            min_probes=3,  # Set low so all genes are reported in output
-            output_prefix=comparison_id,
-            outdir=outdir,
-            sex=comparison_sample_sex,
-        )
-
-        # Add the genemetircs file to the list
-        genemetrics_files.append(comparison_sample_genemetrics_file)
+        genemetrics_files = [future.result() for future in as_completed(futures)]
 
     return genemetrics_files
+
+
+def _compare_sample_to_reference(
+    reference_sample_id: str,
+    reference_sample_copy_number_reference_file: Path,
+    comparison_sample_id: str,
+    comparison_sample_coverage_files: t.List[Path],
+    sample_metadata_file: Path,
+    outdir: Path,
+):
+    logger.info(
+        f"Comparing sample {comparison_sample_id} to reference sample {reference_sample_id} ..."
+    )
+
+    # Get the coverage files for the comparison sample
+    (
+        comparison_sample_target_coverage_file,
+        comparison_sample_antitarget_coverage_file,
+    ) = validate_sample_coverage_files(
+        comparison_sample_id, comparison_sample_coverage_files
+    )
+
+    # Run cnvkit.py fix to adjust other sample's (anti)target coverage files to the reference sample's copy number reference
+    comparison_sample_ratio_file = run_cnvkit_fix(
+        comparison_sample_target_coverage_file,
+        comparison_sample_antitarget_coverage_file,
+        reference_sample_copy_number_reference_file,
+        comparison_sample_id,
+        outdir,
+    )
+
+    # Get the sex of the comparison sample
+    comparison_sample_sex = get_sample_sex(comparison_sample_id, sample_metadata_file)
+
+    # Run CNVKit genemetrics to compare the comparison sample to the reference sample
+    comparison_id = f"{comparison_sample_id}_vs_{reference_sample_id}"
+    comparison_sample_genemetrics_file = run_cnvkit_genemetrics(
+        ratio_file=comparison_sample_ratio_file,
+        threshold=0.00001,
+        min_probes=3,
+        output_prefix=comparison_id,
+        outdir=outdir,
+        sex=comparison_sample_sex,
+    )
+
+    # Add the genemetircs file to the list
+    return comparison_sample_genemetrics_file
