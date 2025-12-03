@@ -19,6 +19,7 @@ from fur_cnvkit.utils.cnvkit_utils import (
     perform_centring,
     run_cnvkit_genemetrics,
     filter_genemetrics_file,
+    filter_cns_by_weight,
     run_cnvkit_diagram,
     run_cnvkit_scatter,
 )
@@ -103,6 +104,15 @@ def get_argparser(
         default=-0.4,
         help="Log2(FC) threshold for calling copy-number losses.",
     )
+    parser.add_argument(
+        "--weight_filter_threshold",
+        type=float,
+        help=(
+            "If provided, segments with weight below this value will be removed from "
+            "median-centred .cns files and additional plots will be generated from the "
+            "filtered files."
+        ),
+    )
     # Output directory for results
     parser.add_argument(
         "-o",
@@ -127,6 +137,7 @@ def perform_post_processing(
     sex: str,
     gain_threshold: float,
     loss_threshold: float,
+    weight_filter_threshold: t.Optional[float],
     log2_shift_records: t.List[t.Dict[str, t.Any]],
     outdir: Path,
 ):
@@ -140,6 +151,8 @@ def perform_post_processing(
       - Run cnvkit genemetrics on both the ratio file and the median-centred segment file.
       - Filter the genemetrics output using specified thresholds.
       - Generate diagram and scatter plots.
+      - If a weight filter threshold is provided, create a weight-filtered
+        median-centred file and generate additional plots from it.
 
     Returns:
         A tuple of (filtered genemetrics segment file, ratio file) for later MAD calculation.
@@ -225,6 +238,29 @@ def perform_post_processing(
     logger.debug(f"Sample {sample_id} - Diagram plot: {diagram_plot}")
     logger.debug(f"Sample {sample_id} - Scatter plot: {scatter_plot}")
 
+    if weight_filter_threshold is not None:
+        weight_filtered_segment_file = filter_cns_by_weight(
+            median_centred_segment_file, weight_filter_threshold, outdir
+        )
+        plot_tag = f"weight-ge-{weight_filter_threshold}"
+        filtered_diagram_plot = run_cnvkit_diagram(
+            ratio_file,
+            weight_filtered_segment_file,
+            outdir,
+            output_tag=plot_tag,
+        )
+        filtered_scatter_plot = run_cnvkit_scatter(
+            ratio_file,
+            weight_filtered_segment_file,
+            outdir,
+            output_tag=plot_tag,
+        )
+        logger.debug(
+            f"Sample {sample_id} - Weight-filtered segment file: {weight_filtered_segment_file}"
+        )
+        logger.debug(f"Sample {sample_id} - Filtered diagram plot: {filtered_diagram_plot}")
+        logger.debug(f"Sample {sample_id} - Filtered scatter plot: {filtered_scatter_plot}")
+
     logger.info(f"Sample {sample_id} post-processing complete.")
     # Return the filtered genemetrics segment file and the ratio file (for MAD calculations).
     return filtered_genemetrics_segment_file, ratio_file
@@ -237,6 +273,7 @@ def process_sample(
     sex: str,
     gain_threshold: float,
     loss_threshold: float,
+    weight_filter_threshold: t.Optional[float],
     log2_shift_records: t.List[t.Dict[str, t.Any]],
     batch_outdir: Path,
 ):
@@ -271,6 +308,7 @@ def process_sample(
         sex=sex,
         gain_threshold=gain_threshold,
         loss_threshold=loss_threshold,
+        weight_filter_threshold=weight_filter_threshold,
         log2_shift_records=log2_shift_records,
         outdir=batch_outdir,
     )
@@ -287,6 +325,7 @@ def process_sex_group(
     unplaced_contigs: t.List[str],
     gain_threshold: float,
     loss_threshold: float,
+    weight_filter_threshold: t.Optional[float],
     sample_metadata_xlsx: Path,
     log2_shift_records: t.List[t.Dict[str, t.Any]],
 ):
@@ -331,6 +370,7 @@ def process_sex_group(
             sex,
             gain_threshold,
             loss_threshold,
+            weight_filter_threshold,
             log2_shift_records,
             batch_output_dir,
         )
@@ -349,6 +389,7 @@ def process_study(
     baitset_genes_file: Path,
     gain_threshold: float,
     loss_threshold: float,
+    weight_filter_threshold: t.Optional[float],
     outdir: Path,
 ):
     """
@@ -398,6 +439,7 @@ def process_study(
             unplaced_contigs,
             gain_threshold,
             loss_threshold,
+            weight_filter_threshold,
             sample_metadata_xlsx,
             log2_shift_records,
         )
@@ -494,6 +536,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
     selected_studies = set(args.studies) if args.studies else None
     gain_threshold = args.gain_threshold
     loss_threshold = args.loss_threshold
+    weight_filter_threshold = args.weight_filter_threshold
     outdir = args.outdir
 
     # Log the input parameters.
@@ -503,6 +546,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
     logger.debug(f"Selected studies: {selected_studies}")
     logger.debug(f"Gain threshold: {gain_threshold}")
     logger.debug(f"Loss threshold: {loss_threshold}")
+    logger.debug(f"Weight filter threshold: {weight_filter_threshold}")
     logger.debug(f"Output directory: {outdir}")
 
     logger.info("Starting CNVkit copy number calling pipeline ...")
@@ -550,6 +594,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
             baitset_genes_file,
             gain_threshold,
             loss_threshold,
+            weight_filter_threshold,
             outdir,
         )
 

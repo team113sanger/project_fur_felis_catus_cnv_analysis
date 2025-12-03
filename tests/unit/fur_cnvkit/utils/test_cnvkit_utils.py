@@ -13,6 +13,7 @@ from fur_cnvkit.utils.cnvkit_utils import (
     run_cnvkit_autobin,
     perform_centring,
     filter_genemetrics_file,
+    filter_cns_by_weight,
 )
 from fur_cnvkit.utils import cnvkit_utils
 
@@ -219,3 +220,38 @@ def test_filter_genemetrics_file(genemetrics_test_file):
     assert (
         set(df_filtered["gene"]) == expected_genes
     ), "Filtered results do not match expected genes"
+
+
+@pytest.fixture
+def centred_cns_test_file():
+    """Fixture to create a temporary median-centred CNS file for testing."""
+    temp_dir = Path(tempfile.mkdtemp())
+    test_file = temp_dir / "sample.call.median_centred.cns"
+
+    data = (
+        "chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tp_ttest\tprobes\tweight\n"
+        "chr1\t10\t20\tGeneA\t0.1\t2\t30\t0.05\t5\t0.2\n"
+        "chr1\t20\t30\tGeneB\t0.2\t2\t30\t0.05\t5\t0.6\n"
+        "chr1\t30\t40\tGeneC\t0.3\t2\t30\t0.05\t5\tNA\n"
+    )
+
+    with open(test_file, "w") as f:
+        f.write(data)
+
+    return test_file, temp_dir
+
+
+def test_filter_cns_by_weight(centred_cns_test_file):
+    """Ensure CNS rows below the weight threshold are removed."""
+    cns_file, output_dir = centred_cns_test_file
+    output_file = filter_cns_by_weight(cns_file, 0.5, output_dir)
+
+    assert output_file.exists()
+    assert output_file.name.endswith("weight_ge_0.5.cns")
+
+    with output_file.open() as f:
+        lines = [line.strip() for line in f.readlines() if line.strip()]
+
+    assert len(lines) == 3  # header + 2 retained rows
+    genes = [line.split("\t")[3] for line in lines[1:]]
+    assert genes == ["GeneB", "GeneC"]
