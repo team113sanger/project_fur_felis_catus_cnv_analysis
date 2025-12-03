@@ -258,8 +258,12 @@ def perform_post_processing(
         logger.debug(
             f"Sample {sample_id} - Weight-filtered segment file: {weight_filtered_segment_file}"
         )
-        logger.debug(f"Sample {sample_id} - Filtered diagram plot: {filtered_diagram_plot}")
-        logger.debug(f"Sample {sample_id} - Filtered scatter plot: {filtered_scatter_plot}")
+        logger.debug(
+            f"Sample {sample_id} - Filtered diagram plot: {filtered_diagram_plot}"
+        )
+        logger.debug(
+            f"Sample {sample_id} - Filtered scatter plot: {filtered_scatter_plot}"
+        )
 
     logger.info(f"Sample {sample_id} post-processing complete.")
     # Return the filtered genemetrics segment file and the ratio file (for MAD calculations).
