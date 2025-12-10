@@ -812,10 +812,14 @@ def run_cnvkit_batch(
 
 
 def run_cnvkit_scatter(
-    ratio_file: Path, segment_file: Path, output_directory: Path
+    ratio_file: Path,
+    segment_file: Path,
+    output_directory: Path,
+    output_tag: t.Optional[str] = None,
 ) -> Path:
     """Run cnvkit.py scatter on a given ratio and segment file. Returns a Path object to the output plot"""
-    output_scatter_plot_filename = ratio_file.name.replace(".cnr", "-scatter.png")
+    tag = f"-{output_tag}" if output_tag else ""
+    output_scatter_plot_filename = ratio_file.name.replace(".cnr", f"-scatter{tag}.png")
     output_scatter_plot_path = output_directory / output_scatter_plot_filename
 
     cnvkit_scatter_cmd = f"cnvkit.py scatter {str(ratio_file)} -s {str(segment_file)} -o {str(output_scatter_plot_path)}"
@@ -831,10 +835,14 @@ def run_cnvkit_scatter(
 
 
 def run_cnvkit_diagram(
-    ratio_file: Path, segment_file: Path, output_directory: Path
+    ratio_file: Path,
+    segment_file: Path,
+    output_directory: Path,
+    output_tag: t.Optional[str] = None,
 ) -> Path:
     """Run cnvkit.py diagram on a given ratio and segment file. Returns a Path object to the output plot"""
-    output_diagram_plot_filename = ratio_file.name.replace(".cnr", "-diagram.pdf")
+    tag = f"-{output_tag}" if output_tag else ""
+    output_diagram_plot_filename = ratio_file.name.replace(".cnr", f"-diagram{tag}.pdf")
     output_diagram_plot_path = output_directory / output_diagram_plot_filename
 
     cnvkit_diagram_cmd = f"cnvkit.py diagram {str(ratio_file)} -s {str(segment_file)} -o {str(output_diagram_plot_path)}"
@@ -1028,6 +1036,66 @@ def filter_genemetrics_file(
     filtered_df.to_csv(filtered_genemetrics_file_path, sep="\t", index=False)
 
     return filtered_genemetrics_file_path
+
+
+def _get_weight_column_index(header_line: str, cns_file: Path) -> int:
+    columns = header_line.strip().split("\t")
+    if "weight" not in columns:
+        raise ValueError(f"The input CNS file {cns_file} is missing a 'weight' column.")
+    return columns.index("weight")
+
+
+def _parse_weight(parts: t.List[str], weight_idx: int) -> t.Optional[float]:
+    try:
+        return float(parts[weight_idx])
+    except ValueError:
+        return None
+
+
+def filter_cns_by_weight(cns_file: Path, min_weight: float, outdir: Path) -> Path:
+    """
+    Create a copy of a CNS file with rows removed where the weight is below the
+    provided threshold.
+
+    Non-numeric weight values are retained unchanged.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    output_file_path = outdir / f"{cns_file.stem}.weight_ge_{min_weight}.cns"
+
+    if skip_file_generation(output_file_path, validator=file_exists_and_nonempty):
+        return output_file_path
+
+    removed_rows = 0
+    total_rows = 0
+
+    with cns_file.open() as infile, output_file_path.open("w") as outfile:
+        header = infile.readline()
+        outfile.write(header)
+
+        weight_idx = _get_weight_column_index(header, cns_file)
+
+        for line in infile:
+            total_rows += 1
+            parts = line.rstrip("\n").split("\t")
+            weight_value = _parse_weight(parts, weight_idx)
+
+            if weight_value is None:
+                outfile.write(line)
+                continue
+
+            if weight_value < min_weight:
+                removed_rows += 1
+                continue
+
+            outfile.write("\t".join(parts) + "\n")
+
+    logger.info(
+        f"Filtered {removed_rows} of {total_rows} segments with weight < {min_weight} "
+        f"from {cns_file} into {output_file_path}"
+    )
+
+    return output_file_path
 
 
 # -----------------------------------------------------------------------------
