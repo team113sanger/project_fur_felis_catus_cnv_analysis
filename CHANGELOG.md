@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-10
+### Added
+- `generate_cnvkit_static_files` can now run in `--parameter-file-only` mode with new `--existing-*` arguments, allowing reuse of pre-generated BED and baitset files when only refreshing the `parameters.json`.
+- `run_cnvkit_copy_number_calling_pipeline` gained `--weight_filter_threshold`, which filters low-weight segments from median-centred `.cns` files and emits tagged scatter/diagram plots built from the filtered calls.
+- Introduced the reusable `filter_cns_by_weight` helper (with unit tests) plus support for tagged plot filenames in `run_cnvkit_diagram` / `run_cnvkit_scatter` to underpin the new pipeline option.
+
 ## [0.4.0] - 2025-11-17
 ### Added
 - Added compatability with DERMATLAS-style metadata manifest files in `generate_cnvkit_static_files` instead of FUR-based Excel spreadsheets
