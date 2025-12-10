@@ -151,6 +151,55 @@ def get_argparser(
         "(passed to `cnvkit.py access -x`).",
     )
     parser.add_argument(
+        "--parameter-file-only",
+        action="store_true",
+        help=(
+            "Skip generation of CNVKit static files and only create the parameters.json "
+            "file. Requires --existing-access-bed, --existing-targets-bed, "
+            "--existing-antitargets-bed, and --existing-baitset-genes-file."
+        ),
+    )
+    parser.add_argument(
+        "--existing-access-bed",
+        metavar="ACCESS_BED",
+        type=Path,
+        required=False,
+        help=(
+            "Path to an existing access BED file. Required when --parameter-file-only "
+            "is used."
+        ),
+    )
+    parser.add_argument(
+        "--existing-targets-bed",
+        metavar="TARGETS_BED",
+        type=Path,
+        required=False,
+        help=(
+            "Path to an existing targets BED file. Required when --parameter-file-only "
+            "is used."
+        ),
+    )
+    parser.add_argument(
+        "--existing-antitargets-bed",
+        metavar="ANTITARGETS_BED",
+        type=Path,
+        required=False,
+        help=(
+            "Path to an existing antitargets BED file. Required when --parameter-file-only "
+            "is used."
+        ),
+    )
+    parser.add_argument(
+        "--existing-baitset-genes-file",
+        metavar="BAITSET_GENES_FILE",
+        type=Path,
+        required=False,
+        help=(
+            "Path to an existing baitset genes file. Required when --parameter-file-only "
+            "is used."
+        ),
+    )
+    parser.add_argument(
         "-o",
         metavar="OUTDIR",
         type=Path,
@@ -209,6 +258,30 @@ def _maybe_override_metadata_columns(
 ) -> None:
     if metadata_columns is not None:
         set_metadata_columns(metadata_columns)
+
+
+def _require_parameter_only_bed(
+    file_path: t.Optional[Path], argument_name: str
+) -> Path:
+    if file_path is None:
+        raise ValueError(
+            f"{argument_name} is required when --parameter-file-only is specified."
+        )
+    return validate_bed(file_path)
+
+
+def _require_parameter_only_file(
+    file_path: t.Optional[Path], argument_name: str
+) -> Path:
+    if file_path is None:
+        raise ValueError(
+            f"{argument_name} is required when --parameter-file-only is specified."
+        )
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"{argument_name} was set to '{file_path}', but the file does not exist."
+        )
+    return file_path
 
 
 def _categorise_bams(
@@ -374,6 +447,11 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
     parameter_file_name = args.p
     access_exclude_bed = validate_bed(args.x) if args.x else None
     outdir = args.o
+    parameter_file_only = args.parameter_file_only
+    existing_access_bed = args.existing_access_bed
+    existing_targets_bed = args.existing_targets_bed
+    existing_antitargets_bed = args.existing_antitargets_bed
+    existing_baitset_genes_file = args.existing_baitset_genes_file
     metadata_columns_input = {
         "sample_id": args.metadata_sample_id_column,
         "tumour_normal": args.metadata_tumour_normal_column,
@@ -414,6 +492,7 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
     else:
         logger.debug("No access exclude BED provided.")
     logger.debug(f"Outdir: {outdir}")
+    logger.debug(f"Parameter file only mode: {parameter_file_only}")
 
     logger.info(
         "Command line arguments will now be used to generate CNVKit statis files ..."
@@ -428,18 +507,38 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
         logger.info("No exclude file detected. Using unfiltered normal BAMs...")
         filtered_bams = validated_bams
 
-    # Run cnvkit.py access
-    access_bed = run_cnvkit_access(
-        reference_fasta, outdir, exclude_bed=access_exclude_bed
-    )
+    if parameter_file_only:
+        logger.info(
+            "Parameter-file-only mode enabled. Existing CNVKit static files will be used."
+        )
+        access_bed = _require_parameter_only_bed(
+            existing_access_bed, "--existing-access-bed"
+        )
+        targets_bed = _require_parameter_only_bed(
+            existing_targets_bed, "--existing-targets-bed"
+        )
+        antitargets_bed = _require_parameter_only_bed(
+            existing_antitargets_bed, "--existing-antitargets-bed"
+        )
+        baitset_genes_file = _require_parameter_only_file(
+            existing_baitset_genes_file, "--existing-baitset-genes-file"
+        )
+    else:
+        # Run cnvkit.py access
+        access_bed = run_cnvkit_access(
+            reference_fasta, outdir, exclude_bed=access_exclude_bed
+        )
 
-    # Run cnvkit.py autobin
-    target_bed_dict = run_cnvkit_autobin(
-        filtered_bams, baitset_bed, access_bed, refflat_file, outdir
-    )
+        # Run cnvkit.py autobin
+        target_bed_dict = run_cnvkit_autobin(
+            filtered_bams, baitset_bed, access_bed, refflat_file, outdir
+        )
 
-    # Generate a baitset genes file using the target BED
-    baitset_genes_file = generate_baitset_genes_file(target_bed_dict["target"], outdir)
+        targets_bed = target_bed_dict["target"]
+        antitargets_bed = target_bed_dict["antitarget"]
+
+        # Generate a baitset genes file using the target BED
+        baitset_genes_file = generate_baitset_genes_file(targets_bed, outdir)
 
     # Generate parameter file including newly generated reference files
     generate_parameter_file(
@@ -450,8 +549,8 @@ def main(args: t.Optional[argparse.Namespace] = None) -> None:
         refflat_file=refflat_file,
         sample_metadata_xlsx=sample_metadata_xlsx,
         access_bed=access_bed,
-        targets_bed=target_bed_dict["target"],
-        antitargets_bed=target_bed_dict["antitarget"],
+        targets_bed=targets_bed,
+        antitargets_bed=antitargets_bed,
         baitset_genes_file=baitset_genes_file,
         metadata_columns=metadata_columns_for_parameter,
         parameter_file_name=parameter_file_name,
