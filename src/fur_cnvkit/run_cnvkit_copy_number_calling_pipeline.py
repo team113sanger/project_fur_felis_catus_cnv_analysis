@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import typing as t
 
@@ -120,6 +121,24 @@ def get_argparser(
         type=Path,
         required=True,
         help="Path to the output directory.",
+    )
+    parser.add_argument(
+        "--study-workers",
+        type=int,
+        default=None,
+        help=(
+            "Maximum number of studies to process in parallel. "
+            "If omitted, studies are processed sequentially."
+        ),
+    )
+    parser.add_argument(
+        "--batch-processes",
+        type=int,
+        default=None,
+        help=(
+            "Number of worker processes to supply to cnvkit.py batch via the --processes argument. "
+            "If omitted, CNVkit will use all available CPUs for each study."
+        ),
     )
     parser.add_argument(
         "--verbose",
@@ -332,6 +351,7 @@ def process_sex_group(
     weight_filter_threshold: t.Optional[float],
     sample_metadata_xlsx: Path,
     log2_shift_records: t.List[t.Dict[str, t.Any]],
+    cnvkit_batch_processes: t.Optional[int] = None,
 ):
     """
     Process all samples for a given sex group.
@@ -355,6 +375,7 @@ def process_sex_group(
         copy_number_reference_file=copy_number_reference_file,
         outdir=study_outdir,
         sex=sex,
+        processes=cnvkit_batch_processes,
     )
     logger.debug(f"Batch output directory for {sex} samples: {batch_output_dir}")
 
@@ -395,6 +416,7 @@ def process_study(
     loss_threshold: float,
     weight_filter_threshold: t.Optional[float],
     outdir: Path,
+    cnvkit_batch_processes: t.Optional[int] = None,
 ):
     """
     Process an individual study through the complete CNVkit pipeline.
@@ -446,6 +468,7 @@ def process_study(
             weight_filter_threshold,
             sample_metadata_xlsx,
             log2_shift_records,
+            cnvkit_batch_processes,
         )
         study_genemetrics_records += sex_records
 
@@ -525,6 +548,82 @@ def process_study(
     logger.info(f"Study {study_id} processing complete.")
 
 
+def _normalize_worker_count(value: t.Optional[int]) -> t.Optional[int]:
+    if value is None:
+        return None
+    return max(1, value)
+
+
+def _process_studies(
+    study_ids_to_sample_ids: t.Dict[str, t.List[str]],
+    selected_studies: t.Optional[t.Set[str]],
+    tumour_bam_list: t.List[Path],
+    sample_metadata_xlsx: Path,
+    unplaced_contigs: t.List[str],
+    male_ref: Path,
+    female_ref: Path,
+    baitset_genes_file: Path,
+    gain_threshold: float,
+    loss_threshold: float,
+    weight_filter_threshold: t.Optional[float],
+    outdir: Path,
+    study_workers: t.Optional[int],
+    batch_processes: t.Optional[int],
+):
+    studies_to_process = [
+        (study_id, sample_ids)
+        for study_id, sample_ids in study_ids_to_sample_ids.items()
+        if not selected_studies or study_id in selected_studies
+    ]
+
+    if study_workers is not None and study_workers > 1 and len(studies_to_process) > 1:
+        logger.info(
+            f"Processing {len(studies_to_process)} studies in parallel using "
+            f"{study_workers} worker processes."
+        )
+        with ProcessPoolExecutor(max_workers=study_workers) as executor:
+            future_to_study = {
+                executor.submit(
+                    process_study,
+                    study_id,
+                    sample_ids,
+                    tumour_bam_list,
+                    sample_metadata_xlsx,
+                    unplaced_contigs,
+                    male_ref,
+                    female_ref,
+                    baitset_genes_file,
+                    gain_threshold,
+                    loss_threshold,
+                    weight_filter_threshold,
+                    outdir,
+                    batch_processes,
+                ): study_id
+                for study_id, sample_ids in studies_to_process
+            }
+            for future in as_completed(future_to_study):
+                study_id = future_to_study[future]
+                future.result()
+                logger.info(f"Study {study_id} finished.")
+    else:
+        for study_id, sample_ids in studies_to_process:
+            process_study(
+                study_id,
+                sample_ids,
+                tumour_bam_list,
+                sample_metadata_xlsx,
+                unplaced_contigs,
+                male_ref,
+                female_ref,
+                baitset_genes_file,
+                gain_threshold,
+                loss_threshold,
+                weight_filter_threshold,
+                outdir,
+                batch_processes,
+            )
+
+
 def main(args: t.Optional[argparse.Namespace] = None):
     """
     Main entry point for the CNVkit pipeline.
@@ -542,6 +641,8 @@ def main(args: t.Optional[argparse.Namespace] = None):
     loss_threshold = args.loss_threshold
     weight_filter_threshold = args.weight_filter_threshold
     outdir = args.outdir
+    study_workers = _normalize_worker_count(args.study_workers)
+    batch_processes = _normalize_worker_count(args.batch_processes)
 
     # Log the input parameters.
     logger.debug(f"Parameter file: {parameter_file}")
@@ -552,6 +653,8 @@ def main(args: t.Optional[argparse.Namespace] = None):
     logger.debug(f"Loss threshold: {loss_threshold}")
     logger.debug(f"Weight filter threshold: {weight_filter_threshold}")
     logger.debug(f"Output directory: {outdir}")
+    logger.debug(f"Study workers: {study_workers}")
+    logger.debug(f"CNVkit batch processes: {batch_processes}")
 
     logger.info("Starting CNVkit copy number calling pipeline ...")
 
@@ -583,24 +686,22 @@ def main(args: t.Optional[argparse.Namespace] = None):
             f"Selected studies not found in metadata: {', '.join(missing_studies)}"
         )
 
-    # Process each study.
-    for study_id, sample_ids in study_ids_to_sample_ids.items():
-        if selected_studies and study_id not in selected_studies:
-            continue
-        process_study(
-            study_id,
-            sample_ids,
-            tumour_bam_list,
-            sample_metadata_xlsx,
-            unplaced_contigs,
-            male_ref,
-            female_ref,
-            baitset_genes_file,
-            gain_threshold,
-            loss_threshold,
-            weight_filter_threshold,
-            outdir,
-        )
+    _process_studies(
+        study_ids_to_sample_ids=study_ids_to_sample_ids,
+        selected_studies=selected_studies,
+        tumour_bam_list=tumour_bam_list,
+        sample_metadata_xlsx=sample_metadata_xlsx,
+        unplaced_contigs=unplaced_contigs,
+        male_ref=male_ref,
+        female_ref=female_ref,
+        baitset_genes_file=baitset_genes_file,
+        gain_threshold=gain_threshold,
+        loss_threshold=loss_threshold,
+        weight_filter_threshold=weight_filter_threshold,
+        outdir=outdir,
+        study_workers=study_workers,
+        batch_processes=batch_processes,
+    )
 
     logger.info("CNVkit pipeline execution complete.")
     return

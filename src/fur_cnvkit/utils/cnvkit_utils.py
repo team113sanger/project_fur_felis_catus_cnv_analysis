@@ -745,6 +745,7 @@ def run_cnvkit_batch(
     copy_number_reference_file: Path,
     outdir: Path,
     sex: t.Literal["male", "female"],
+    processes: t.Optional[int] = None,
 ) -> Path:
     """
     Run the CNVkit batch command on a list of tumour BAM files.
@@ -759,6 +760,7 @@ def run_cnvkit_batch(
         copy_number_reference_file (Path): Path to the copy number reference.
         outdir (Path): Directory to store the batch results.
         sex (Literal["male", "female"]): Sex of the sample, which affects reference options.
+        processes (Optional[int]): Number of worker processes to pass to cnvkit.py batch.
 
     Returns:
         Path: Path to the output directory containing the CNVKit batch results.
@@ -792,14 +794,20 @@ def run_cnvkit_batch(
     # If outputs are missing or are not valid, continue with the cnvkit.py batch run
     # Build the tumour BAM files string for the batch command.
     tumour_bams_as_string = convert_file_list_to_string(tumour_bams)
+    if processes is not None and processes < 1:
+        raise ValueError("processes must be a positive integer when provided.")
+
     cnvkit_batch_cmd = (
         f"cnvkit.py batch {tumour_bams_as_string} "
         "-m hybrid "
         "--drop-low-coverage "
         f"--reference {str(copy_number_reference_file)} "
         f"--output-dir {str(outdir)} "
-        "--processes"
     )
+    if processes is None:
+        cnvkit_batch_cmd += " --processes"
+    else:
+        cnvkit_batch_cmd += f" --processes {processes}"
 
     # If the sample sex is male, add the male reference option.
     if sex == "male":
