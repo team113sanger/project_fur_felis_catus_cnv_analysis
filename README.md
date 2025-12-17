@@ -40,6 +40,21 @@ options:
 
 Please see tests for examples
 
+### CPU planning for pipeline runs
+
+Several commands expose knobs that let you balance throughput against overall CPU usage:
+
+- `generate_copy_number_reference --threads N` limits the number of worker processes used when building coverage files and running normal-vs-normal comparisons. Setting it to the total number of CPUs on the host (e.g. `--threads 32`) gives CNVkit free rein; lower values reduce concurrency.
+- `run_cnvkit_copy_number_calling_pipeline --study-workers S --batch-processes B` lets you bound the cross-study fan-out (`S`) and how many processes each `cnvkit.py batch` invocation uses internally (`B`). The upper bound on simultaneous CNVkit workers is roughly `S × B`.
+
+Practical guidance:
+
+1. Decide how many studies can run side-by-side without thrashing the filesystem or saturating memory, and pass that to `--study-workers`. Leaving it unset keeps the legacy sequential behaviour.
+2. For each study, pick a `--batch-processes` value that keeps `S × B` below the total CPU count (e.g. on a 48‑core host, `--study-workers 3 --batch-processes 12` consumes at most 36 cores, leaving headroom for the OS and I/O threads).
+3. If you want to devote the entire machine to a single study, set `--study-workers 1 --batch-processes <CPU count>` (or omit `--batch-processes` to let CNVkit auto-detect and use all CPUs).
+
+Adjust these numbers downward if you observe I/O bottlenecks or if other services share the machine.
+
 ## Docker Image
 
 This project hosts Docker images on Quay.io. Please see [https://quay.io/repository/team113sanger/fur_cnvkit](https://quay.io/repository/team113sanger/fur_cnvkit?tab=tags).
