@@ -819,6 +819,46 @@ def run_cnvkit_batch(
     return outdir
 
 
+def run_cnvkit_call(
+    cns_path: Path,
+    out_path: Path,
+    thresholds: t.List[float],
+    *,
+    method: str = "threshold",
+    male_reference: t.Optional[bool] = None,
+    cnvkit_cmd: str = "cnvkit.py",
+) -> Path:
+    """
+    Run cnvkit.py call on a .cns file with explicit thresholds.
+    """
+    thresholds_str = ",".join(str(value) for value in thresholds)
+    logger.info(
+        "Running %s call on %s with thresholds %s.",
+        cnvkit_cmd,
+        cns_path,
+        thresholds_str,
+    )
+
+    if skip_file_generation(out_path, validator=is_valid_call_cns_file):
+        return out_path
+
+    call_cmd = (
+        f"{cnvkit_cmd} call {str(cns_path)} -m {method} "
+        f"-t={thresholds_str} -o {str(out_path)}"
+    )
+    if male_reference:
+        call_cmd += " -y"
+
+    try:
+        result = execute_command(call_cmd)
+        log_success(call_cmd, result)
+    except subprocess.CalledProcessError as error:
+        log_error(call_cmd, error)
+        raise
+
+    return out_path
+
+
 def run_cnvkit_scatter(
     ratio_file: Path,
     segment_file: Path,
