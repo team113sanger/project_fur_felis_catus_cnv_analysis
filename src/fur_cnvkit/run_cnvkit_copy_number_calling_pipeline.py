@@ -167,6 +167,11 @@ def get_argparser(
             "filtered files."
         ),
     )
+    parser.add_argument(
+        "--skip-genemetrics",
+        action="store_true",
+        help="Skip CNVkit genemetrics generation and related summary outputs.",
+    )
     # Output directory for results
     parser.add_argument(
         "-o",
@@ -213,6 +218,7 @@ def perform_post_processing(
     log2_shift_records: t.List[t.Dict[str, t.Any]],
     outdir: Path,
     call_segment_override: t.Optional[Path] = None,
+    skip_genemetrics: bool = False,
 ):
     """
     Perform post-processing on CNVkit output files for a given sample.
@@ -263,51 +269,59 @@ def perform_post_processing(
     )
     logger.debug(f"Log2 shift record appended for sample {sample_id}")
 
-    # Run genemetrics on the ratio file.
-    genemetrics_ratio_file = run_cnvkit_genemetrics(
-        ratio_file=ratio_file,
-        threshold=1e-9,  # Very low threshold to include all genes.
-        min_probes=3,
-        output_prefix=sample_id,
-        outdir=outdir,
-        sex=sex,
-    )
-    # Run genemetrics on the median-centred segment file.
-    genemetrics_segment_file = run_cnvkit_genemetrics(
-        ratio_file=ratio_file,
-        threshold=1e-9,
-        min_probes=3,
-        output_prefix=sample_id,
-        outdir=outdir,
-        sex=sex,
-        segment_file=median_centred_segment_file,
-    )
-    logger.debug(
-        f"Sample {sample_id} - Genemetrics ratio file: {genemetrics_ratio_file}"
-    )
-    logger.debug(
-        f"Sample {sample_id} - Genemetrics segment file: {genemetrics_segment_file}"
-    )
+    filtered_genemetrics_segment_file: t.Optional[Path] = None
+    if skip_genemetrics:
+        logger.info("Skipping genemetrics generation for sample %s.", sample_id)
+    else:
+        # Run genemetrics on the ratio file.
+        genemetrics_ratio_file = run_cnvkit_genemetrics(
+            ratio_file=ratio_file,
+            threshold=1e-9,  # Very low threshold to include all genes.
+            min_probes=3,
+            output_prefix=sample_id,
+            outdir=outdir,
+            sex=sex,
+        )
+        # Run genemetrics on the median-centred segment file.
+        genemetrics_segment_file = run_cnvkit_genemetrics(
+            ratio_file=ratio_file,
+            threshold=1e-9,
+            min_probes=3,
+            output_prefix=sample_id,
+            outdir=outdir,
+            sex=sex,
+            segment_file=median_centred_segment_file,
+        )
+        logger.debug(
+            f"Sample {sample_id} - Genemetrics ratio file: {genemetrics_ratio_file}"
+        )
+        logger.debug(
+            f"Sample {sample_id} - Genemetrics segment file: {genemetrics_segment_file}"
+        )
 
-    # Filter the genemetrics files to extract significant copy-number calls.
-    filtered_genemetrics_ratio_file = filter_genemetrics_file(
-        genemetrics_file=genemetrics_ratio_file,
-        lower_threshold=loss_threshold,
-        upper_threshold=gain_threshold,
-        outdir=outdir,
-    )
-    filtered_genemetrics_segment_file = filter_genemetrics_file(
-        genemetrics_file=genemetrics_segment_file,
-        lower_threshold=loss_threshold,
-        upper_threshold=gain_threshold,
-        outdir=outdir,
-    )
-    logger.debug(
-        f"Sample {sample_id} - Filtered genemetrics ratio file: {filtered_genemetrics_ratio_file}"
-    )
-    logger.debug(
-        f"Sample {sample_id} - Filtered genemetrics segment file: {filtered_genemetrics_segment_file}"
-    )
+        # Filter the genemetrics files to extract significant copy-number calls.
+        filtered_genemetrics_ratio_file = filter_genemetrics_file(
+            genemetrics_file=genemetrics_ratio_file,
+            lower_threshold=loss_threshold,
+            upper_threshold=gain_threshold,
+            outdir=outdir,
+        )
+        filtered_genemetrics_segment_file = filter_genemetrics_file(
+            genemetrics_file=genemetrics_segment_file,
+            lower_threshold=loss_threshold,
+            upper_threshold=gain_threshold,
+            outdir=outdir,
+        )
+        logger.debug(
+            "Sample %s - Filtered genemetrics ratio file: %s",
+            sample_id,
+            filtered_genemetrics_ratio_file,
+        )
+        logger.debug(
+            "Sample %s - Filtered genemetrics segment file: %s",
+            sample_id,
+            filtered_genemetrics_segment_file,
+        )
 
     # Generate plots (diagram and scatter) for visualization.
     diagram_plot = run_cnvkit_diagram(ratio_file, median_centred_segment_file, outdir)
@@ -428,6 +442,7 @@ def process_sample(
     log2_shift_records: t.List[t.Dict[str, t.Any]],
     batch_outdir: Path,
     called_cns_files: t.Optional[t.Dict[str, Path]] = None,
+    skip_genemetrics: bool = False,
 ):
     """
     Process an individual sample.
@@ -474,6 +489,7 @@ def process_sample(
         log2_shift_records=log2_shift_records,
         outdir=batch_outdir,
         call_segment_override=call_segment_override,
+        skip_genemetrics=skip_genemetrics,
     )
     logger.info(f"Sample {sample_id} processed successfully.")
     return sample_id, sample_genemetrics_file, ratio_file
@@ -493,6 +509,7 @@ def process_sex_group(
     log2_shift_records: t.List[t.Dict[str, t.Any]],
     cnvkit_batch_processes: t.Optional[int] = None,
     call_thresholds: t.Optional[t.List[float]] = None,
+    skip_genemetrics: bool = False,
 ):
     """
     Process all samples for a given sex group.
@@ -550,9 +567,91 @@ def process_sex_group(
             log2_shift_records,
             batch_output_dir,
             called_cns_files=custom_call_files,
+            skip_genemetrics=skip_genemetrics,
         )
         sex_genemetrics_records.append(sample_record)
     return sex_genemetrics_records
+
+
+def _merge_log2_shift_records(
+    log2_shift_records: t.List[t.Dict[str, t.Any]],
+    log2_shift_csv_path: Path,
+) -> None:
+    if log2_shift_csv_path.exists():
+        logger.info(
+            "Merging with existing log2 shift CSV at %s ...", log2_shift_csv_path
+        )
+        existing_df = pd.read_csv(log2_shift_csv_path)
+        existing_log2_dict = {
+            row["Sample ID"]: row["Log2 Shift Value"]
+            for _, row in existing_df.iterrows()
+            if pd.notnull(row["Log2 Shift Value"])
+        }
+        for record in log2_shift_records:
+            if (
+                record["Log2 Shift Value"] is None
+                and record["Sample ID"] in existing_log2_dict
+            ):
+                record["Log2 Shift Value"] = existing_log2_dict[record["Sample ID"]]
+
+
+def _save_log2_shift_records(
+    log2_shift_records: t.List[t.Dict[str, t.Any]],
+    log2_shift_csv_path: Path,
+) -> None:
+    log2_shift_df = pd.DataFrame(log2_shift_records)
+    log2_shift_df.to_csv(log2_shift_csv_path, index=False)
+    logger.info("Log2 shift CSV saved at %s", log2_shift_csv_path)
+
+
+def _generate_genemetrics_summaries(
+    study_id: str,
+    study_genemetrics_records: t.List[t.Tuple[str, t.Optional[Path], Path]],
+    filtered_sample_ids: t.Iterable[str],
+    baitset_genes_file: Path,
+    study_outdir: Path,
+    gain_threshold: float,
+    loss_threshold: float,
+    skip_genemetrics: bool,
+) -> None:
+    if skip_genemetrics:
+        logger.info("Skipping genemetrics summary generation for study %s.", study_id)
+        return
+
+    filtered_sample_id_set = set(filtered_sample_ids)
+
+    filtered_study_genemetrics_files = [
+        genemetrics_file
+        for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
+        if sample_id not in filtered_sample_id_set and genemetrics_file is not None
+    ]
+    logger.info(
+        "Filtered out %s high-MAD samples from study %s.",
+        len(filtered_sample_id_set),
+        study_id,
+    )
+
+    generate_genemetrics_study_summary_csv(
+        study_id=study_id,
+        genemetrics_files=filtered_study_genemetrics_files,
+        baitset_genes_file=baitset_genes_file,
+        outdir=study_outdir,
+        gain_threshold=gain_threshold,
+        loss_threshold=loss_threshold,
+    )
+
+    generate_genemetrics_study_summary_csv(
+        study_id=f"{study_id}_all_samples",
+        genemetrics_files=[
+            genemetrics_file
+            for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
+            if genemetrics_file is not None
+        ],
+        baitset_genes_file=baitset_genes_file,
+        outdir=study_outdir,
+        gain_threshold=gain_threshold,
+        loss_threshold=loss_threshold,
+    )
 
 
 def process_study(
@@ -570,6 +669,7 @@ def process_study(
     outdir: Path,
     cnvkit_batch_processes: t.Optional[int] = None,
     call_thresholds: t.Optional[t.List[float]] = None,
+    skip_genemetrics: bool = False,
 ):
     """
     Process an individual study through the complete CNVkit pipeline.
@@ -605,7 +705,7 @@ def process_study(
 
     log2_shift_records: t.List[t.Dict[str, t.Any]] = []
     # Store a tuple (sample_id, genemetrics file, ratio file) for each sample.
-    study_genemetrics_records: t.List[t.Tuple[str, Path, Path]] = []
+    study_genemetrics_records: t.List[t.Tuple[str, t.Optional[Path], Path]] = []
 
     # Process samples for each sex group.
     for sex, sex_tumour_bams in tumour_bam_sex_dict.items():
@@ -623,6 +723,7 @@ def process_study(
             log2_shift_records,
             cnvkit_batch_processes,
             call_thresholds,
+            skip_genemetrics,
         )
         study_genemetrics_records += sex_records
 
@@ -644,59 +745,20 @@ def process_study(
         prefix=study_id,
     )
 
-    # Filter out high-MAD samples from the study records.
-    filtered_study_genemetrics_files = [
-        genemetrics_file
-        for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
-        if sample_id not in filtered_sample_ids
-    ]
-    logger.info(
-        f"Filtered out {len(filtered_sample_ids)} high-MAD samples from study {study_id}."
-    )
-
     # Merge the log2 shift records with an existing CSV if available.
     log2_shift_csv_path = study_outdir / "log2_shift_values.csv"
-    if log2_shift_csv_path.exists():
-        logger.info(
-            f"Merging with existing log2 shift CSV at {log2_shift_csv_path} ..."
-        )
-        existing_df = pd.read_csv(log2_shift_csv_path)
-        existing_log2_dict = {
-            row["Sample ID"]: row["Log2 Shift Value"]
-            for _, row in existing_df.iterrows()
-            if pd.notnull(row["Log2 Shift Value"])
-        }
-        for record in log2_shift_records:
-            if (
-                record["Log2 Shift Value"] is None
-                and record["Sample ID"] in existing_log2_dict
-            ):
-                record["Log2 Shift Value"] = existing_log2_dict[record["Sample ID"]]
-    log2_shift_df = pd.DataFrame(log2_shift_records)
-    log2_shift_df.to_csv(log2_shift_csv_path, index=False)
-    logger.info(f"Log2 shift CSV saved at {log2_shift_csv_path}")
+    _merge_log2_shift_records(log2_shift_records, log2_shift_csv_path)
+    _save_log2_shift_records(log2_shift_records, log2_shift_csv_path)
 
-    # Generate the study-level genemetrics summary CSV using only filtered samples.
-    generate_genemetrics_study_summary_csv(
+    _generate_genemetrics_summaries(
         study_id=study_id,
-        genemetrics_files=filtered_study_genemetrics_files,
+        study_genemetrics_records=study_genemetrics_records,
+        filtered_sample_ids=filtered_sample_ids,
         baitset_genes_file=baitset_genes_file,
-        outdir=study_outdir,
+        study_outdir=study_outdir,
         gain_threshold=gain_threshold,
         loss_threshold=loss_threshold,
-    )
-
-    # Also, generate the study-level genemetrics summary including all samples (for completeness).
-    generate_genemetrics_study_summary_csv(
-        study_id=f"{study_id}_all_samples",
-        genemetrics_files=[
-            genemetrics_file
-            for sample_id, genemetrics_file, ratio_file in study_genemetrics_records
-        ],
-        baitset_genes_file=baitset_genes_file,
-        outdir=study_outdir,
-        gain_threshold=gain_threshold,
-        loss_threshold=loss_threshold,
+        skip_genemetrics=skip_genemetrics,
     )
 
     logger.info(f"Study {study_id} processing complete.")
@@ -724,6 +786,7 @@ def _process_studies(
     study_workers: t.Optional[int],
     batch_processes: t.Optional[int],
     call_thresholds: t.Optional[t.List[float]],
+    skip_genemetrics: bool,
 ):
     studies_to_process = [
         (study_id, sample_ids)
@@ -754,6 +817,7 @@ def _process_studies(
                     outdir,
                     batch_processes,
                     call_thresholds,
+                    skip_genemetrics,
                 ): study_id
                 for study_id, sample_ids in studies_to_process
             }
@@ -778,6 +842,7 @@ def _process_studies(
                 outdir,
                 batch_processes,
                 call_thresholds,
+                skip_genemetrics,
             )
 
 
@@ -801,6 +866,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
     outdir = args.outdir
     study_workers = _normalize_worker_count(args.study_workers)
     batch_processes = _normalize_worker_count(args.batch_processes)
+    skip_genemetrics = args.skip_genemetrics
 
     # Log the input parameters.
     logger.debug(f"Parameter file: {parameter_file}")
@@ -814,6 +880,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
     logger.debug(f"Output directory: {outdir}")
     logger.debug(f"Study workers: {study_workers}")
     logger.debug(f"CNVkit batch processes: {batch_processes}")
+    logger.debug(f"Skip genemetrics: {skip_genemetrics}")
 
     logger.info("Starting CNVkit copy number calling pipeline ...")
 
@@ -861,6 +928,7 @@ def main(args: t.Optional[argparse.Namespace] = None):
         study_workers=study_workers,
         batch_processes=batch_processes,
         call_thresholds=call_thresholds,
+        skip_genemetrics=skip_genemetrics,
     )
 
     logger.info("CNVkit pipeline execution complete.")
