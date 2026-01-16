@@ -369,7 +369,7 @@ def _rerun_cnvkit_call_for_samples(
 ) -> t.Dict[str, Path]:
     """
     Re-run cnvkit.py call for each sample with custom thresholds and return a mapping
-    of sample_id -> newly generated call file.
+    of sample_id -> newly generated call file, using the existing *.call.cns file.
     """
     sample_to_called_file: t.Dict[str, Path] = {}
     thresholds_str = ",".join(str(value) for value in thresholds)
@@ -380,11 +380,25 @@ def _rerun_cnvkit_call_for_samples(
     )
 
     for sample_id in sorted(sample_ids):
-        cns_path = batch_output_dir / f"{sample_id}.cns"
-        if not cns_path.exists():
+        cns_candidates = sorted(
+            path
+            for path in batch_output_dir.glob("*.call.cns")
+            if path.is_file()
+            and sample_id in path.name
+            and ".thresholds_" not in path.name
+        )
+        if not cns_candidates:
             raise FileNotFoundError(
-                f"Expected CNVkit .cns file not found for sample '{sample_id}' at {cns_path}."
+                "Expected CNVkit .call.cns file not found for sample "
+                f"'{sample_id}' in {batch_output_dir}."
             )
+        if len(cns_candidates) > 1:
+            candidate_list = ", ".join(str(path) for path in cns_candidates)
+            raise ValueError(
+                f"Multiple CNVkit .cns files found for sample '{sample_id}': "
+                f"{candidate_list}"
+            )
+        cns_path = cns_candidates[0]
         called_path = _build_called_cns_path(cns_path, thresholds)
         run_cnvkit_call(
             cns_path=cns_path,
