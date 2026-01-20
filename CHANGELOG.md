@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-20
+### Added
+- `run_cnvkit_copy_number_calling_pipeline` now accepts `--call-thresholds` to re-run `cnvkit.py call` with custom log2 cutoffs and propagate the new `.thresholds_*.call.cns` files through downstream outputs.
+- `run_cnvkit_copy_number_calling_pipeline` now supports `--skip-genemetrics` to bypass genemetrics generation and related summary outputs.
+
 ## [0.6.0] - 2025-12-17
 ### Added
 - `run_cnvkit_copy_number_calling_pipeline` can now process studies in parallel via `--study-workers` and limit CNVkit's internal multiprocessing per study with `--batch-processes`.
