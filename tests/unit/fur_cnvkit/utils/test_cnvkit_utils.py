@@ -11,6 +11,7 @@ from fur_cnvkit.utils.cnvkit_utils import (
     run_command,
     run_cnvkit_access,
     run_cnvkit_autobin,
+    run_cnvkit_call,
     perform_centring,
     filter_genemetrics_file,
     filter_cns_by_weight,
@@ -77,6 +78,34 @@ def test_run_cnvkit_autobin(
     assert target_bed_dict["target"] == expected_target_bed_path
     assert target_bed_dict["antitarget"] == expected_antitarget_bed_path
     mock_run_command.assert_called_once_with(expected_cmd)
+
+
+@patch("fur_cnvkit.utils.cnvkit_utils.execute_command")
+@patch("fur_cnvkit.utils.cnvkit_utils.log_success")
+def test_run_cnvkit_call_constructs_expected_command(
+    mock_log_success, mock_execute_command, tmp_path: Path
+):
+    mock_result = MagicMock(stdout="ok", stderr="")
+    mock_execute_command.return_value = mock_result
+
+    cns_path = tmp_path / "Sample.cns"
+    cns_path.write_text("header\tvalue\n")
+    out_path = tmp_path / "Sample.thresholds_-1.1_-0.4_0.3_0.7.call.cns"
+    thresholds = [-1.1, -0.4, 0.3, 0.7]
+
+    run_cnvkit_call(
+        cns_path=cns_path,
+        out_path=out_path,
+        thresholds=thresholds,
+        male_reference=True,
+    )
+
+    called_cmd = mock_execute_command.call_args[0][0]
+    assert "cnvkit.py call" in called_cmd
+    assert "-m threshold" in called_cmd
+    assert "-t=-1.1,-0.4,0.3,0.7" in called_cmd
+    assert f"-o {str(out_path)}" in called_cmd
+    assert called_cmd.strip().endswith("-y")
 
 
 @pytest.mark.parametrize(
