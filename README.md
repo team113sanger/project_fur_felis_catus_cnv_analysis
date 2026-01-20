@@ -55,6 +55,21 @@ Practical guidance:
 
 Adjust these numbers downward if you observe I/O bottlenecks or if other services share the machine.
 
+### Applying custom CNVKit call thresholds
+
+`cnvkit.py batch` always invokes `cnvkit.py call` internally with the default log₂ cutoffs. When you need different boundaries, pass `--call-thresholds` to `run_cnvkit_copy_number_calling_pipeline` and the wrapper will re-run `cnvkit.py call` on every `.cns` produced by the batch step, leaving the original `.cns` files untouched. Thresholds are supplied as a comma-separated list, e.g.:
+
+```bash
+run_cnvkit_copy_number_calling_pipeline \
+  --parameter_file params.json \
+  --male_reference male.cnn \
+  --female_reference female.cnn \
+  --outdir results \
+  --call-thresholds -1.1,-0.4,0.3,0.7
+```
+
+The new `Sample.thresholds_-1.1_-0.4_0.3_0.7.call.cns` files then flow through the rest of the pipeline (genemetrics, centring, plotting, etc.), keeping the default CNVKit exports available for comparison.
+
 ## Docker Image
 
 This project hosts Docker images on Quay.io. Please see [https://quay.io/repository/team113sanger/fur_cnvkit](https://quay.io/repository/team113sanger/fur_cnvkit?tab=tags).
