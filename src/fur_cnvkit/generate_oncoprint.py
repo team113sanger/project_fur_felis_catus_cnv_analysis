@@ -191,7 +191,7 @@ def prepare_cnv_heatmap_data(
     cna_data = copy_number_data[["Unnamed: 0"] + recurrent_genes].set_index(
         "Unnamed: 0"
     )
-    return cna_data.applymap(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    return cna_data.map(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
 
 
 def prepare_mutations_data(

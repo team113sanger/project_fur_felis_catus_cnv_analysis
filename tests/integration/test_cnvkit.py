@@ -51,7 +51,7 @@ def test_cnvkit_is_installed():
 
 def test_cnvkit_version_is_expected():
     # Given
-    expected_version = "0.9.10"
+    expected_version = "0.9.14"
     cmd = "cnvkit.py version"
 
     # When

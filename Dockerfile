@@ -20,7 +20,7 @@ FROM ubuntu:22.04 AS base_stage
 #    to actually install a different version of R,
 #    you will need to pick the correct debian package names, see below.
 #
-ARG PYTHON_VERSION=3.10 R_VERSION=4.2.2
+ARG PYTHON_VERSION=3.11 R_VERSION=4.2.2
 
 # Set environment variables.
 # 1. Force Python stdout and stderr streams to be unbuffered.
@@ -110,7 +110,7 @@ RUN \
     && rm -rf /var/lib/apt/lists/* \
     && pipx ensurepath \
     && pipx install poetry==$POETRY_VERSION \
-    && python3 --version | grep ${PYTHON_VERSION} \
+    && python${PYTHON_VERSION} --version | grep ${PYTHON_VERSION} \
     && pipx inject -f poetry poetry-plugin-export \
     && apt-get -s clean
 
@@ -160,7 +160,7 @@ USER $USER_NAME
 
 WORKDIR $OPT_DIRECTORY
 RUN \
-    python3 -m venv ${VENV_DIRECTORY} &&  \
+    python${PYTHON_VERSION:?} -m venv ${VENV_DIRECTORY} &&  \
     echo "source ${VENV_DIRECTORY}/bin/activate" >> "${USER_BASHRC}"
 ENV \
     PATH="${VENV_DIRECTORY}/bin:${PATH}" \

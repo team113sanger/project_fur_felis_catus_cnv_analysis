@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Changed
+- Upgraded CNVkit from 0.9.10 to 0.9.14.
+- Minimum Python version raised from 3.10 to 3.11 (required by CNVkit 0.9.14); Docker images, CI and pre-commit updated to match.
+- numpy and pandas upgraded to 2.x (CNVkit 0.9.14 requires numpy>=2.3.5 and pandas>=2.3.3).
+- Replaced deprecated `DataFrame.applymap` with `DataFrame.map` in `generate_oncoprint`.
+
 ## [0.7.0] - 2026-01-20
 ### Added
 - `run_cnvkit_copy_number_calling_pipeline` now accepts `--call-thresholds` to re-run `cnvkit.py call` with custom log2 cutoffs and propagate the new `.thresholds_*.call.cns` files through downstream outputs.
